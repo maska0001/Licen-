@@ -12,6 +12,179 @@ from app.models.supplier_template_pricing import SupplierTemplatePricing
 Base.metadata.create_all(bind=engine)
 
 
+AUTO_SERVICE_GROUPS = [
+    {
+        "services": [
+            "Formație live",
+            "Animatori (copii / adulți)",
+            "Dansatori / show artistic",
+            "Artiști invitați",
+            "Karaoke",
+            "Momente speciale (ursitoare, magician, focuri reci)",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [4500, 7500, 12000],
+    },
+    {
+        "services": [
+            "Dronă",
+            "Photo Booth",
+            "Video Booth 360°",
+            "Cabină foto instant",
+            "Live streaming",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [2500, 4500, 7000],
+    },
+    {
+        "services": [
+            "Aranjamente mese",
+            "Balonistică",
+            "Tematică personalizată",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [1500, 2800, 4200],
+    },
+    {
+        "services": [
+            "Catering",
+            "Candy bar",
+            "Tort",
+            "Prăjituri / deserturi",
+            "Cocktail bar",
+            "Bar mobil",
+            "Degustări (vin)",
+        ],
+        "price_type": "PER_PERSON",
+        "tiers": [120, 220, 350],
+    },
+    {
+        "services": [
+            "Sonorizare",
+            "Lumini",
+            "Ecrane LED / proiector",
+            "Scenă",
+            "Generatoare",
+            "Echipamente speciale",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [3000, 5500, 9000],
+    },
+    {
+        "services": [
+            "Makeup",
+            "Hairstyling",
+            "Styling vestimentar",
+            "Rochii / costume (închiriere)",
+            "Accesorii",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [1200, 2200, 3800],
+    },
+    {
+        "services": [
+            "Transport invitați",
+            "Transport artiști",
+            "Transfer VIP",
+            "Cazare invitați",
+            "Coordonare ziua evenimentului",
+            "Hostess / personal eveniment",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [1800, 3200, 5200],
+    },
+    {
+        "services": [
+            "Organizator eveniment",
+            "Wedding planner",
+            "Event manager",
+            "Coordonator ziua evenimentului",
+            "Consultanță eveniment",
+            "Scenariu eveniment (timeline)",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [2500, 4500, 7500],
+    },
+    {
+        "services": [
+            "Invitații digitale",
+            "Invitații tipărite",
+            "Meniuri",
+            "Place cards",
+            "Numere de masă",
+            "Panou welcome",
+            "Mărturii invitați",
+        ],
+        "price_type": "FIX_EVENT",
+        "tiers": [500, 1200, 2200],
+    },
+]
+
+
+def _slugify_for_email(value: str) -> str:
+    replacements = {
+        "ă": "a",
+        "â": "a",
+        "î": "i",
+        "ș": "s",
+        "ț": "t",
+        " ": "-",
+        "/": "-",
+        "(": "",
+        ")": "",
+        ",": "",
+        "°": "",
+    }
+    result = value.lower()
+    for old, new in replacements.items():
+        result = result.replace(old, new)
+    return result
+
+
+def _generate_missing_service_templates(existing_service_types):
+    generated_templates = []
+    multipliers = {
+        "wedding": 1.2,
+        "birthday": 1.0,
+        "corporate": 1.15,
+        "default": 1.0,
+    }
+    tiers = [
+        ("Start", 4.2),
+        ("Select", 4.5),
+        ("Premium", 4.8),
+    ]
+
+    for group in AUTO_SERVICE_GROUPS:
+        for service_name in group["services"]:
+            if service_name in existing_service_types:
+                continue
+
+            email_slug = _slugify_for_email(service_name)
+            for idx, (suffix, rating) in enumerate(tiers):
+                base_tier_price = group["tiers"][idx]
+                generated_templates.append(
+                    {
+                        "name": f"{service_name} {suffix}",
+                        "service_type": service_name,
+                        "description": f"Serviciu {service_name.lower()} pentru evenimente.",
+                        "phone": f"+373 60 00 00 {idx + 1}",
+                        "email": f"{email_slug}-{suffix.lower()}@example.md",
+                        "rating": rating,
+                        "prices": [
+                            {
+                                "event_type": event_type,
+                                "base_price": round(base_tier_price * multiplier, 2),
+                                "price_type": group["price_type"],
+                            }
+                            for event_type, multiplier in multipliers.items()
+                        ],
+                    }
+                )
+
+    return generated_templates
+
+
 def seed_suppliers():
     db = SessionLocal()
     
@@ -434,6 +607,9 @@ def seed_suppliers():
                 ]
             },
         ]
+
+        existing_service_types = {supplier["service_type"] for supplier in suppliers_data}
+        suppliers_data.extend(_generate_missing_service_templates(existing_service_types))
         
         # Adaugă furnizorii în baza de date
         for supplier_data in suppliers_data:
