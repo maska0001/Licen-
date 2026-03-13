@@ -1,0 +1,18 @@
+from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey
+from sqlalchemy.orm import relationship
+from app.database.session import Base
+
+
+class ChecklistItem(Base):
+    __tablename__ = "checklist_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    task = Column(String, nullable=False)
+    category = Column(String, nullable=True)
+    completed = Column(Boolean, default=False)
+    due_date = Column(Date, nullable=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True)
+
+    # Relationships
+    event = relationship("Event", back_populates="checklist_items")
