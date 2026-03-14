@@ -19,12 +19,13 @@ import {
 } from "../../utils/pricing";
 import {
   SUPPLIER_CATEGORIES,
-  migrateCategoryToEmoji,
+  getSupplierGroup,
+  getSupplierLabel,
 } from "../../data/categories";
 import { supplierService } from "../../services/supplierService";
 
 export function Suppliers() {
-  const { activeEventId } = useAppContext();
+  const { activeEventId, event } = useAppContext();
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("Toate");
@@ -182,7 +183,9 @@ export function Suppliers() {
   const filteredSuppliers =
     selectedCategory === "Toate"
       ? suppliers.filter((s) => !s.isCustom)
-      : suppliers.filter((s) => s.category === selectedCategory && !s.isCustom);
+      : suppliers.filter(
+          (s) => getSupplierGroup(s.category) === selectedCategory && !s.isCustom
+        );
 
   const selectedSuppliers = suppliers.filter((s) => s.selected);
 
@@ -386,15 +389,12 @@ export function Suppliers() {
             {/* Grid cu furnizori - 3 coloane */}
             <div className="grid grid-cols-3 gap-[16px]">
               {selectedSuppliers.map((supplier) => {
-                // Migrate category to emoji version
-                const displayCategory = migrateCategoryToEmoji(
-                  supplier.category
-                );
+                const displayCategory = getSupplierLabel(supplier.category);
 
                 const pricingContext = {
-                  guestCount: 125, // Default guest count
+                  guestCount: event?.guestCount || 0,
                   durationHours: 4,
-                  eventType: "Nuntă",
+                  eventType: event?.type || "Nuntă",
                 };
                 const totalPrice = calculateSupplierPrice(supplier, pricingContext);
                 const unitPrice = supplier.customPrice || supplier.price;
@@ -527,8 +527,9 @@ export function Suppliers() {
           const categoryCount =
             category === "Toate"
               ? suppliers.filter((s) => !s.isCustom).length
-              : suppliers.filter((s) => s.category === category && !s.isCustom)
-                  .length;
+              : suppliers.filter(
+                  (s) => getSupplierGroup(s.category) === category && !s.isCustom
+                ).length;
 
           const isSelected = selectedCategory === category;
 
@@ -564,13 +565,12 @@ export function Suppliers() {
       {/* Suppliers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredSuppliers.map((supplier) => {
-          // Migrate category to emoji version
-          const displayCategory = migrateCategoryToEmoji(supplier.category);
+          const displayCategory = getSupplierLabel(supplier.category);
 
           const pricingContext = {
-            guestCount: event?.guest_count || 0,
+            guestCount: event?.guestCount || 0,
             durationHours: 4,
-            eventType: event?.event_type || "Nuntă",
+            eventType: event?.type || "Nuntă",
           };
           const totalPrice = calculateSupplierPrice(supplier, pricingContext);
           const unitPrice = supplier.customPrice || supplier.price;

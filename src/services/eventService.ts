@@ -5,7 +5,10 @@ export interface Event {
   user_id: number;
   title: string;
   event_type?: string | null;
-  date: string;
+  date: string | null;
+  date_mode?: string | null;
+  event_month?: number | null;
+  event_year?: number | null;
   city: string | null;
   guest_count: number;
   budget_total_estimated?: number | null;

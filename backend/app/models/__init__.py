@@ -12,6 +12,8 @@ from app.models.rsvp import RsvpToken
 from app.models.event_service_preference import EventServicePreference
 from app.models.event_package import EventPackage
 from app.models.event_package_item import EventPackageItem
+from app.models.service_category import ServiceCategory
+from app.models.service import Service
 
 __all__ = [
     "User",
@@ -28,4 +30,6 @@ __all__ = [
     "EventServicePreference",
     "EventPackage",
     "EventPackageItem",
+    "ServiceCategory",
+    "Service",
 ]

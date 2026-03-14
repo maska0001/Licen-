@@ -5,7 +5,10 @@ export interface FrontendEvent {
   id: string;
   type: string;
   status: string;
-  date: string;
+  date: string | null;
+  dateMode?: string | null;
+  eventMonth?: number | null;
+  eventYear?: number | null;
   city: string | null;
   guestCount: number;
   vibe: string;
@@ -20,6 +23,9 @@ export const mapEventFromApi = (event: ApiEvent): FrontendEvent => ({
   type: event.event_type || event.title,
   status: 'planning',
   date: event.date,
+  dateMode: event.date_mode,
+  eventMonth: event.event_month,
+  eventYear: event.event_year,
   city: event.city,
   guestCount: event.guest_count ?? 0,
   vibe: '',

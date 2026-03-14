@@ -111,7 +111,7 @@ class WizardStep3Update(BaseModel):
 
 class WizardStep4Update(BaseModel):
     """Pas 4 - Locație"""
-    city: str
+    city: Optional[str] = None
     venue_city: Optional[str] = None
     venue_name: Optional[str] = None
     address: Optional[str] = None

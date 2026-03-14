@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.database.session import get_db
+from app.models.service_category import ServiceCategory
 from app.models.user import User
 from app.models.supplier import Supplier
 from app.models.supplier_template import SupplierTemplate
@@ -14,35 +15,96 @@ from app.services.supplier_service import create_supplier_dependencies, remove_s
 router = APIRouter(tags=["Suppliers"])
 
 
+@router.get("/service-categories", response_model=List[dict])
+def get_service_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    active_template_service_names = {
+        row[0]
+        for row in db.query(SupplierTemplate.service_type)
+        .filter(SupplierTemplate.is_active == True)
+        .distinct()
+        .all()
+        if row[0]
+    }
+
+    category_rows = (
+        db.query(ServiceCategory)
+        .filter(ServiceCategory.is_active == True)
+        .order_by(ServiceCategory.sort_order.asc(), ServiceCategory.name.asc())
+        .all()
+    )
+
+    categories = []
+    covered_service_names = set()
+
+    for category in category_rows:
+        available_services = [
+            service.name
+            for service in sorted(
+                category.services, key=lambda item: (item.sort_order, item.name)
+            )
+            if service.is_active and service.name in active_template_service_names
+        ]
+        if available_services:
+            categories.append({"name": category.name, "services": available_services})
+            covered_service_names.update(available_services)
+
+    uncategorized_services = sorted(
+        active_template_service_names - covered_service_names
+    )
+    if uncategorized_services:
+        categories.append(
+            {
+                "name": "🧩 Alte servicii",
+                "services": uncategorized_services,
+            }
+        )
+
+    return categories
+
+
 @router.get("/templates", response_model=List[dict])
 def get_supplier_templates(
+    service_type: Optional[str] = Query(default=None),
+    event_type: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get all available supplier templates for selection
     """
-    templates = db.query(SupplierTemplate).all()
+    templates_query = db.query(SupplierTemplate).filter(SupplierTemplate.is_active == True)
+    if service_type:
+        templates_query = templates_query.filter(SupplierTemplate.service_type == service_type)
+
+    templates = templates_query.order_by(SupplierTemplate.name.asc()).all()
     
     # Convert to format expected by frontend
     result = []
     for template in templates:
-        # Get default pricing (use "default" event type)
-        default_pricing = db.query(SupplierTemplatePricing).filter(
+        pricing_query = db.query(SupplierTemplatePricing).filter(
             SupplierTemplatePricing.supplier_template_id == template.id,
-            SupplierTemplatePricing.event_type == "default",
             SupplierTemplatePricing.is_active == True
-        ).first()
-        
-        # If no default pricing, get any pricing
-        if not default_pricing:
-            default_pricing = db.query(SupplierTemplatePricing).filter(
-                SupplierTemplatePricing.supplier_template_id == template.id,
-                SupplierTemplatePricing.is_active == True
+        )
+
+        selected_pricing = None
+        if event_type:
+            selected_pricing = pricing_query.filter(
+                SupplierTemplatePricing.event_type == event_type
             ).first()
-        
-        price = default_pricing.base_price if default_pricing else 0
-        price_type = default_pricing.pricing_model if default_pricing else "FIX_EVENT"
+
+        if not selected_pricing:
+            selected_pricing = pricing_query.filter(
+                SupplierTemplatePricing.event_type == "default"
+            ).first()
+
+        if not selected_pricing:
+            selected_pricing = pricing_query.first()
+
+        price = selected_pricing.base_price if selected_pricing else 0
+        price_type = selected_pricing.pricing_model if selected_pricing else "FIX_EVENT"
         
         result.append({
             "id": f"template_{template.id}",  # Prefix to distinguish from selected suppliers

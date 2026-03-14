@@ -105,9 +105,6 @@ def start_wizard(
         user_id=current_user.id,
         title=step1_data.title,
         event_type=step1_data.event_type,
-        date=date.today(),  # Default date, will be updated in step 2
-        city="Not specified",  # Default, will be updated in step 3
-        guest_count=0,  # Default, will be updated in step 4
         status=EventStatus.DRAFT,
         wizard_step=1
     )
@@ -238,42 +235,73 @@ def update_step4(
     """
     event = verify_event_ownership(db, event_id, current_user)
     
-    event.city = step4_data.city
-    event.venue_city = step4_data.venue_city
-    event.venue_name = step4_data.venue_name
-    event.venue_address = step4_data.address
-    event.venue_price_per_guest = step4_data.venue_price_per_guest
+    previous_venue_name = event.venue_name
+
+    is_unknown_location = step4_data.location_mode == "unknown"
+    resolved_city = None if is_unknown_location else step4_data.city
+    resolved_venue_city = None if is_unknown_location else step4_data.venue_city
+    resolved_venue_name = None if is_unknown_location else step4_data.venue_name
+    resolved_address = None if is_unknown_location else step4_data.address
+    resolved_venue_price = (
+        None if is_unknown_location else step4_data.venue_price_per_guest
+    )
+
+    event.city = resolved_city
+    event.venue_city = resolved_venue_city
+    event.venue_name = resolved_venue_name
+    event.venue_address = resolved_address
+    event.venue_price_per_guest = resolved_venue_price
     event.location_mode = step4_data.location_mode
     event.wizard_step = max(event.wizard_step, 4)
-    
-    # If venue is selected with price, create a supplier for it
-    if step4_data.venue_name and step4_data.venue_price_per_guest and step4_data.location_mode != "unknown":
-        # Check if supplier already exists for this venue
-        existing_supplier = db.query(Supplier).filter(
+
+    managed_supplier_names = {
+        name for name in [previous_venue_name, resolved_venue_name] if name
+    }
+
+    managed_suppliers = []
+    if managed_supplier_names:
+        managed_suppliers = db.query(Supplier).filter(
             Supplier.event_id == event.id,
             Supplier.category == "Restaurant",
-            Supplier.name == step4_data.venue_name
-        ).first()
-        
-        if not existing_supplier:
-            # Create supplier for the venue/restaurant
+            Supplier.is_custom == True,
+            Supplier.name.in_(managed_supplier_names),
+        ).all()
+
+    if is_unknown_location or not resolved_venue_name or not resolved_venue_price:
+        for supplier in managed_suppliers:
+            db.delete(supplier)
+    else:
+        existing_supplier = next(
+            (supplier for supplier in managed_suppliers if supplier.name == resolved_venue_name),
+            None,
+        )
+
+        for supplier in managed_suppliers:
+            if supplier.id != getattr(existing_supplier, "id", None):
+                db.delete(supplier)
+
+        if existing_supplier:
+            existing_supplier.name = resolved_venue_name
+            existing_supplier.location = resolved_city
+            existing_supplier.price = resolved_venue_price
+            existing_supplier.price_type = "PER_INVITAT"
+            existing_supplier.selected = True
+            existing_supplier.is_custom = True
+            if not existing_supplier.rating:
+                existing_supplier.rating = 4.5
+        else:
             venue_supplier = Supplier(
-                name=step4_data.venue_name,
+                name=resolved_venue_name,
                 category="Restaurant",
-                price=step4_data.venue_price_per_guest,
+                location=resolved_city,
+                price=resolved_venue_price,
                 price_type="PER_INVITAT",
                 selected=True,
                 event_id=event.id,
                 is_custom=True,
-                rating=4.5  # Default rating for custom venues
+                rating=4.5,
             )
             db.add(venue_supplier)
-            print(f"DEBUG: Created supplier for venue: {step4_data.venue_name}")
-        else:
-            # Update existing supplier
-            existing_supplier.price = step4_data.venue_price_per_guest
-            existing_supplier.selected = True
-            print(f"DEBUG: Updated existing supplier for venue: {step4_data.venue_name}")
     
     db.commit()
     db.refresh(event)

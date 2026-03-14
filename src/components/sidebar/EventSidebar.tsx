@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Heart, Cake, Baby, Briefcase, PartyPopper, Calendar, MoreVertical, Edit2, Trash2, Check, X } from 'lucide-react';
 import svgPaths from './imports/svg-0diqo9tvby';
+import { formatEventDate } from '../../utils/eventDate';
 
 interface Event {
   id: string;
@@ -8,7 +9,10 @@ interface Event {
   eventName?: string;
   customImage?: string;
   status: string;
-  date: string;
+  date: string | null;
+  dateMode?: string | null;
+  eventMonth?: number | null;
+  eventYear?: number | null;
   city: string;
   guestCount: number;
   vibe: string;
@@ -42,17 +46,6 @@ function getEventIcon(eventType: string) {
       return Baby;
     default:
       return Calendar;
-  }
-}
-
-// Function to format date
-function formatDate(dateString: string) {
-  try {
-    const date = new Date(dateString);
-    const months = ['ian.', 'feb.', 'mar.', 'apr.', 'mai', 'iun.', 'iul.', 'aug.', 'sep.', 'oct.', 'nov.', 'dec.'];
-    return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
-  } catch {
-    return dateString;
   }
 }
 
@@ -290,7 +283,15 @@ export function EventSidebar({ events, activeEventId, onSelectEvent, onCreateEve
                           {/* Data evenimentului */}
                           <div className="h-[16.5px] overflow-clip relative shrink-0 w-full">
                             <p className="absolute font-['Inter:Regular',sans-serif] font-normal leading-[16.5px] left-0 not-italic text-[#9ca3af] text-[11px] text-nowrap top-[0.5px] tracking-[0.0645px]">
-                              {event.date ? formatDate(event.date) : 'Nu e specificat'}
+                              {formatEventDate(
+                                {
+                                  date: event.date,
+                                  dateMode: event.dateMode,
+                                  eventMonth: event.eventMonth,
+                                  eventYear: event.eventYear,
+                                },
+                                'short'
+                              )}
                             </p>
                           </div>
                         </div>

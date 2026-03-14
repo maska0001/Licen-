@@ -14,6 +14,24 @@ export interface Supplier {
   is_custom: boolean;
 }
 
+export interface SupplierTemplateOption {
+  id: string;
+  name: string;
+  category: string;
+  contact?: string;
+  location?: string;
+  price: number;
+  priceType: string;
+  rating: number;
+  selected: boolean;
+  isCustom: boolean;
+}
+
+export interface ServiceCategoryOption {
+  name: string;
+  services: string[];
+}
+
 export interface SupplierCreate {
   name: string;
   category: string;
@@ -44,8 +62,21 @@ export const supplierService = {
     return response.data;
   },
 
-  async getSupplierTemplates(): Promise<Supplier[]> {
-    const response = await api.get('/suppliers/templates');
+  async getSupplierTemplates(filters?: {
+    serviceType?: string;
+    eventType?: string;
+  }): Promise<SupplierTemplateOption[]> {
+    const response = await api.get('/suppliers/templates', {
+      params: {
+        service_type: filters?.serviceType,
+        event_type: filters?.eventType,
+      },
+    });
+    return response.data;
+  },
+
+  async getServiceCategories(): Promise<ServiceCategoryOption[]> {
+    const response = await api.get('/suppliers/service-categories');
     return response.data;
   },
 

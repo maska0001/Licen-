@@ -29,7 +29,10 @@ interface Event {
   eventName?: string; // Nume personalizat pentru eveniment (ex: "Ziua de naștere 23 ani")
   customImage?: string; // URL sau base64 pentru imagine personalizată
   status: string;
-  date: string;
+  date: string | null;
+  dateMode?: string | null;
+  eventMonth?: number | null;
+  eventYear?: number | null;
   city: string;
   guestCount: number;
   vibe: string;

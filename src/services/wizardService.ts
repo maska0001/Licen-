@@ -31,10 +31,10 @@ export interface Step3Data {
 }
 
 export interface Step4Data {
-  city: string;
-  venue_city?: string;
-  venue_name?: string;
-  address?: string;
+  city?: string | null;
+  venue_city?: string | null;
+  venue_name?: string | null;
+  address?: string | null;
   venue_price_per_guest?: number | undefined;
   location_mode?: string;
 }

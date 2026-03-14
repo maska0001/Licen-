@@ -27,6 +27,77 @@ export const TASK_CATEGORIES = [
   '🧾 Print & invitații'
 ] as const;
 
+const SERVICE_TO_GROUP_MAP: Record<string, string> = {
+  'Muzică / DJ': '🎤 Entertainment & atmosferă',
+  'Formație live': '🎤 Entertainment & atmosferă',
+  'MC / Moderator': '🎤 Entertainment & atmosferă',
+  'Animatori (copii / adulți)': '🎤 Entertainment & atmosferă',
+  'Dansatori / show artistic': '🎤 Entertainment & atmosferă',
+  'Artiști invitați': '🎤 Entertainment & atmosferă',
+  'Karaoke': '🎤 Entertainment & atmosferă',
+  'Momente speciale (ursitoare, magician, focuri reci)': '🎤 Entertainment & atmosferă',
+
+  'Fotografie': '📸 Media & conținut',
+  'Videografie': '📸 Media & conținut',
+  'Dronă': '📸 Media & conținut',
+  'Photo Booth': '📸 Media & conținut',
+  'Video Booth 360°': '📸 Media & conținut',
+  'Cabină foto instant': '📸 Media & conținut',
+  'Live streaming': '📸 Media & conținut',
+
+  'Decor eveniment (general)': '🌸 Decor & styling',
+  'Decor floral': '🌸 Decor & styling',
+  'Aranjamente mese': '🌸 Decor & styling',
+  'Panou foto / backdrop': '🌸 Decor & styling',
+  'Balonistică': '🌸 Decor & styling',
+  'Lumânări / sfeșnice': '🌸 Decor & styling',
+  'Tematică personalizată': '🌸 Decor & styling',
+
+  'Restaurant': '🍽️ Mâncare & băuturi',
+  'Catering': '🍽️ Mâncare & băuturi',
+  'Candy bar': '🍽️ Mâncare & băuturi',
+  'Tort': '🍽️ Mâncare & băuturi',
+  'Prăjituri / deserturi': '🍽️ Mâncare & băuturi',
+  'Cocktail bar': '🍽️ Mâncare & băuturi',
+  'Bar mobil': '🍽️ Mâncare & băuturi',
+  'Degustări (vin)': '🍽️ Mâncare & băuturi',
+
+  'Sonorizare': '💡 Tehnic & logistic',
+  'Lumini': '💡 Tehnic & logistic',
+  'Ecrane LED / proiector': '💡 Tehnic & logistic',
+  'Scenă': '💡 Tehnic & logistic',
+  'Generatoare': '💡 Tehnic & logistic',
+  'Echipamente speciale': '💡 Tehnic & logistic',
+
+  'Makeup': '💄 Beauty & pregătire',
+  'Hairstyling': '💄 Beauty & pregătire',
+  'Styling vestimentar': '💄 Beauty & pregătire',
+  'Rochii / costume (închiriere)': '💄 Beauty & pregătire',
+  'Accesorii': '💄 Beauty & pregătire',
+
+  'Transport invitați': '🚗 Logistică & suport',
+  'Transport artiști': '🚗 Logistică & suport',
+  'Transfer VIP': '🚗 Logistică & suport',
+  'Cazare invitați': '🚗 Logistică & suport',
+  'Coordonare ziua evenimentului': '🚗 Logistică & suport',
+  'Hostess / personal eveniment': '🚗 Logistică & suport',
+
+  'Organizator eveniment': '🧠 Organizare & planificare',
+  'Wedding planner': '🧠 Organizare & planificare',
+  'Event manager': '🧠 Organizare & planificare',
+  'Coordonator ziua evenimentului': '🧠 Organizare & planificare',
+  'Consultanță eveniment': '🧠 Organizare & planificare',
+  'Scenariu eveniment (timeline)': '🧠 Organizare & planificare',
+
+  'Invitații digitale': '🧾 Print & invitații',
+  'Invitații tipărite': '🧾 Print & invitații',
+  'Meniuri': '🧾 Print & invitații',
+  'Place cards': '🧾 Print & invitații',
+  'Numere de masă': '🧾 Print & invitații',
+  'Panou welcome': '🧾 Print & invitații',
+  'Mărturii invitați': '🧾 Print & invitații',
+};
+
 // Mapping de la categorie furnizor la categorie task (pentru generarea automată)
 export function getTaskCategoryFromSupplier(supplierCategory: string): string {
   // Dacă categoria furnizorului e deja cu iconițe, o returnăm direct
@@ -59,6 +130,30 @@ export function getCategoryIcon(category: string): string {
 // Helper pentru a obține numele categoriei fără iconițe
 export function getCategoryName(category: string): string {
   return category.replace(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*/u, '').trim();
+}
+
+export function getSupplierGroup(categoryOrService: string): string {
+  const migratedCategory = migrateCategoryToEmoji(categoryOrService);
+
+  if (SUPPLIER_CATEGORIES.includes(migratedCategory as any)) {
+    return migratedCategory;
+  }
+
+  return SERVICE_TO_GROUP_MAP[categoryOrService] || '📋 General';
+}
+
+export function getSupplierLabel(categoryOrService: string): string {
+  const group = getSupplierGroup(categoryOrService);
+  if (group === '📋 General') {
+    return categoryOrService;
+  }
+
+  const migratedCategory = migrateCategoryToEmoji(categoryOrService);
+  if (SUPPLIER_CATEGORIES.includes(migratedCategory as any)) {
+    return getCategoryName(migratedCategory);
+  }
+
+  return categoryOrService;
 }
 
 // Helper pentru migrarea categoriilor vechi (fără emoji) la cele noi (cu emoji)

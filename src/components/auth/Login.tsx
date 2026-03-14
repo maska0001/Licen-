@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../App';
-import { defaultSuppliers } from '../../data/suppliers';
 import svgPathsEye from '../../imports/svg-j8gx8xj9k2';
 import svgPathsMobile from '../../imports/svg-pdnv9up2ou';
 import { authService, eventService } from '../../services';
@@ -23,14 +22,8 @@ interface LoginProps {
 export function Login({ onBackToLanding, initialMode = 'login' }: LoginProps) {
   const { 
     setIsAuthenticated, 
-    setEvent, 
     setEvents,
     setActiveEventId,
-    setGuests, 
-    setBudgetItems, 
-    setChecklist, 
-    setSuppliers,
-    setTables,
     setCurrentView,
     setShowLogin
   } = useAppContext();
@@ -190,83 +183,6 @@ export function Login({ onBackToLanding, initialMode = 'login' }: LoginProps) {
     setPassword('');
     setConfirmPassword('');
     setName('');
-  };
-
-  const handleDemoLogin = () => {
-    // Create a complete demo event
-    const demoEvent = {
-      id: 'demo-1',
-      type: 'Nuntă',
-      status: 'planning',
-      date: '2025-08-15',
-      city: 'Chișinău',
-      guestCount: 120,
-      vibe: 'Romantic și elegant',
-      services: ['Fotografie', 'Videografie', 'Muzică', 'Decor'],
-      budget: 150000
-    };
-
-    const demoGuests = [
-      { id: '1', name: 'Ion Popescu', email: 'ion@email.com', phone: '069123456', rsvpStatus: 'confirmed' as const, attendees: 2, adults: 2, children: 0, notes: 'Vegetarian', tableId: '1', withPartner: true, withChildren: false },
-      { id: '2', name: 'Maria Ionescu', email: 'maria@email.com', phone: '069234567', rsvpStatus: 'confirmed' as const, attendees: 1, adults: 1, children: 0, notes: '', tableId: '1', withPartner: false, withChildren: false },
-      { id: '3', name: 'Vasile Gheorghe', email: 'vasile@email.com', phone: '069345678', rsvpStatus: 'pending' as const, attendees: 3, adults: 2, children: 1, notes: 'Cu copii', tableId: '2', withPartner: true, withChildren: true },
-      { id: '4', name: 'Elena Rusu', email: 'elena@email.com', phone: '069456789', rsvpStatus: 'confirmed' as const, attendees: 2, adults: 2, children: 0, notes: '', tableId: '2', withPartner: true, withChildren: false },
-      { id: '5', name: 'Andrei Moraru', email: 'andrei@email.com', phone: '069567890', rsvpStatus: 'confirmed' as const, attendees: 1, adults: 1, children: 0, notes: '', tableId: '3', withPartner: false, withChildren: false },
-      { id: '6', name: 'Natalia Popa', email: 'natalia@email.com', phone: '069678901', rsvpStatus: 'pending' as const, attendees: 2, adults: 2, children: 0, notes: 'Alergii la nuci', tableId: '3', withPartner: true, withChildren: false },
-      { id: '7', name: 'Dumitru Ciobanu', email: 'dumitru@email.com', phone: '069789012', rsvpStatus: 'confirmed' as const, attendees: 4, adults: 2, children: 2, notes: '', tableId: '4', withPartner: true, withChildren: true },
-      { id: '8', name: 'Cristina Lungu', email: 'cristina@email.com', phone: '069890123', rsvpStatus: 'confirmed' as const, attendees: 2, adults: 2, children: 0, notes: '', tableId: '4', withPartner: true, withChildren: false },
-    ];
-
-    const demoBudget = [
-      { id: '1', category: '📸 Media & conținut', name: 'Studio Foto Premium', estimatedPrice: 3500, realPrice: 3500, paymentStatus: 'deposit' as const, supplierId: '8' },
-      { id: '2', category: '📸 Media & conținut', name: 'Cinema Dreams', estimatedPrice: 4200, realPrice: 4000, paymentStatus: 'deposit' as const, supplierId: '10' },
-      { id: '3', category: '🎤 Entertainment & atmosferă', name: 'Live Band Events', estimatedPrice: 3000, realPrice: 3000, paymentStatus: 'unpaid' as const, supplierId: '2' },
-      { id: '4', category: '🍽️ Mâncare & băuturi', name: 'Restaurant Belvedere', estimatedPrice: 80000, realPrice: 75000, paymentStatus: 'deposit' as const, supplierId: '23' },
-      { id: '5', category: '🌸 Decor & styling', name: 'Floral Paradise', estimatedPrice: 2500, realPrice: 2800, paymentStatus: 'unpaid' as const, supplierId: '16' },
-      { id: '6', category: '🍽️ Mâncare & băuturi', name: 'Sweet Delights', estimatedPrice: 800, realPrice: 800, paymentStatus: 'paid' as const, supplierId: '27' },
-      { id: '7', category: '💡 Tehnic & logistic', name: 'Sound Pro Systems', estimatedPrice: 2000, realPrice: 2000, paymentStatus: 'unpaid' as const, supplierId: '31' },
-    ];
-
-    const demoChecklist = [
-      { id: '1', task: '⭐ Caută opțiuni pentru Mâncare & băuturi', category: '🍽️ Mâncare & băuturi', completed: true, dueDate: '2025-02-15' },
-      { id: '2', task: '⭐ Compară prețuri Mâncare & băuturi', category: '🍽️ Mâncare & băuturi', completed: true, dueDate: '2025-03-01' },
-      { id: '3', task: '⭐ Rezervă Media & conținut', category: '📸 Media & conținut', completed: true, dueDate: '2025-03-15' },
-      { id: '4', task: '⭐ Confirmă detalii finale Media & conținut', category: '📸 Media & conținut', completed: false, dueDate: '2025-04-01' },
-      { id: '5', task: 'Caută opțiuni pentru Decor & styling', category: '🌸 Decor & styling', completed: false, dueDate: '2025-04-15' },
-      { id: '6', task: 'Compară prețuri Decor & styling', category: '🌸 Decor & styling', completed: false, dueDate: '2025-05-01' },
-      { id: '7', task: 'Rezervă Entertainment & atmosferă', category: '🎤 Entertainment & atmosferă', completed: false, dueDate: '2025-06-01' },
-      { id: '8', task: 'Trimite invitațiile', category: '📋 General task', completed: false, dueDate: '2025-06-15' },
-    ];
-
-    const demoSuppliers = defaultSuppliers;
-
-    const demoTables = [
-      { id: '1', name: 'Masa 1', totalSeats: 8, occupiedSeats: 3 },
-      { id: '2', name: 'Masa 2', totalSeats: 8, occupiedSeats: 5 },
-      { id: '3', name: 'Masa 3', totalSeats: 10, occupiedSeats: 3 },
-      { id: '4', name: 'Masa 4', totalSeats: 10, occupiedSeats: 6 },
-      { id: '5', name: 'Masa 5', totalSeats: 6, occupiedSeats: 0 },
-    ];
-
-    // Save to localStorage
-    localStorage.setItem('event', JSON.stringify(demoEvent));
-    localStorage.setItem('guests', JSON.stringify(demoGuests));
-    localStorage.setItem('budgetItems', JSON.stringify(demoBudget));
-    localStorage.setItem('checklist', JSON.stringify(demoChecklist));
-    localStorage.setItem('suppliers', JSON.stringify(demoSuppliers));
-    localStorage.setItem('tables', JSON.stringify(demoTables));
-    localStorage.setItem('currentView', 'dashboard');
-    localStorage.setItem('isAuthenticated', 'true');
-
-    // Set in state
-    setEvent(demoEvent);
-    setGuests(demoGuests);
-    setBudgetItems(demoBudget);
-    setChecklist(demoChecklist);
-    setSuppliers(demoSuppliers);
-    setTables(demoTables);
-    setCurrentView('dashboard');
-    setIsAuthenticated(true);
   };
 
   return (
@@ -462,29 +378,8 @@ export function Login({ onBackToLanding, initialMode = 'login' }: LoginProps) {
                   {isSignUp ? 'Înregistrează-te' : 'Autentifică-te'}
                 </p>
               </button>
-
-              {/* Demo Button */}
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                className="w-full h-[48px] bg-white hover:bg-gray-50 text-black rounded-[48px] border border-[#e7e7e7] transition-all hover:border-black hover:text-black"
-              >
-                <p className="font-['Inter:Regular',sans-serif] font-normal leading-[21px] text-[15px] text-center tracking-[-0.16px]">
-                  Cont demo
-                </p>
-              </button>
             </div>
           </form>
-
-          {/* Footer */}
-          <div className="mt-[48px] pt-[24px] border-t border-[#e5e7eb]">
-            <p className="font-['Inter:Regular',sans-serif] font-normal leading-[16px] text-[#6a7282] text-[12px] text-center mb-[8px]">
-              Demo: folosește orice email și o parolă cu cel puțin 6 caractere
-            </p>
-            <p className="font-['Inter:Regular',sans-serif] font-normal leading-[16px] text-[#6a7282] text-[12px] text-center">
-              sau apasă "Cont Demo" pentru acces instant
-            </p>
-          </div>
         </div>
       </div>
 
@@ -748,22 +643,7 @@ export function Login({ onBackToLanding, initialMode = 'login' }: LoginProps) {
               >
                 {isSignUp ? 'Înregistrează-te' : 'Loghează-te'}
               </button>
-              
-              {/* Demo Button */}
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                className="w-full h-[52px] bg-white hover:bg-gray-50 text-black rounded-full transition-all border border-gray-200 font-medium hover:border-black focus:border-black"
-              >
-                Cont demo
-              </button>
             </form>
-
-            {/* Footer */}
-            <div className="mt-8 pt-6 border-t border-gray-200 text-center text-xs text-gray-500">
-              <p>Demo: folosește orice email și o parolă cu cel puțin 6 caractere</p>
-              <p>sau apasă "Cont Demo" pentru acces instant</p>
-            </div>
           </div>
         </div>
       </div>

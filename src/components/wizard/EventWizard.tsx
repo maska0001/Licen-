@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Check,
   Star,
+  TrendingUp,
   ChevronDown,
   ChevronUp,
   X,
@@ -23,11 +24,17 @@ import step5GuestsImg from "figma:asset/87b3d65caff488e66a0cd6ebab715781fc2616bd
 import step6ServicesImg from "figma:asset/79fe1bccae682c7d2543e93a7759f0ab4776bfd4.png";
 import step7BudgetImg from "figma:asset/19ed1eb23208ef596bfbc884d82d733549a3f260.png";
 import step8PackagesImg from "figma:asset/c5eab9c61fef49ee6906f4a39a16396a28cfc887.png";
+import waxSealImg from "figma:asset/e08073d580deb5e62836424781e803074df7e7ba.png";
 import {
   wizardService,
   type WizardSupplier,
   type Package,
 } from "../../services/wizardService";
+import {
+  supplierService,
+  type SupplierTemplateOption,
+  type ServiceCategoryOption,
+} from "../../services/supplierService";
 import { mapEventFromApi } from "../../utils/mapEventFromApi";
 
 export function EventWizard() {
@@ -113,6 +120,15 @@ export function EventWizard() {
   const [customVenues, setCustomVenues] = useState<
     Array<{ name: string; pricePerGuest: number }>
   >([]);
+  const [venueTemplates, setVenueTemplates] = useState<
+    Array<{ name: string; pricePerGuest: number }>
+  >([]);
+  const [serviceCategories, setServiceCategories] = useState<
+    ServiceCategoryOption[]
+  >([]);
+  const [serviceCategoriesLoading, setServiceCategoriesLoading] =
+    useState(false);
+  const [venuesLoading, setVenuesLoading] = useState(false);
   const [showAddVenueForm, setShowAddVenueForm] = useState(false);
   const [newVenueName, setNewVenueName] = useState("");
   const [newVenuePrice, setNewVenuePrice] = useState("");
@@ -125,6 +141,69 @@ export function EventWizard() {
   const getEventId = (): number | null => {
     return activeEventId ? parseInt(activeEventId) : null;
   };
+
+  const getGuestCountFromRange = (range: string) => {
+    if (range === "200+") return 250;
+    if (!range) return 0;
+    const [min, max] = range.split("-").map(Number);
+    return Math.round((min + max) / 2);
+  };
+
+  const handleDateTypeChange = (dateType: "exact" | "month" | "not-sure") => {
+    setFormData((prev) => ({
+      ...prev,
+      dateType,
+      exactDate: dateType === "exact" ? prev.exactDate : "",
+      selectedMonth: dateType === "month" ? prev.selectedMonth : "",
+      selectedYear: dateType === "month" ? prev.selectedYear : "",
+    }));
+    setShowCalendar(false);
+    setShowMonthDropdown(false);
+    setShowYearDropdown(false);
+  };
+
+  const getStep3Payload = () => {
+    if (formData.dateType === "exact" && formData.exactDate) {
+      const [year, month] = formData.exactDate.split("-").map(Number);
+      return {
+        date: formData.exactDate,
+        date_mode: "exact" as const,
+        event_month: month || null,
+        event_year: year || null,
+        time: null,
+      };
+    }
+
+    if (
+      formData.dateType === "month" &&
+      formData.selectedMonth &&
+      formData.selectedYear
+    ) {
+      const monthIndex = months.indexOf(formData.selectedMonth);
+      const eventMonth = monthIndex >= 0 ? monthIndex + 1 : null;
+      const eventYear = parseInt(formData.selectedYear, 10);
+
+      return {
+        date:
+          eventMonth && eventYear
+            ? `${eventYear}-${String(eventMonth).padStart(2, "0")}-01`
+            : null,
+        date_mode: "month" as const,
+        event_month: eventMonth,
+        event_year: Number.isNaN(eventYear) ? null : eventYear,
+        time: null,
+      };
+    }
+
+    return {
+      date: null,
+      date_mode: "not-sure" as const,
+      event_month: null,
+      event_year: null,
+      time: null,
+    };
+  };
+
 
   // Images for each step
   const stepImages = [
@@ -177,33 +256,98 @@ export function EventWizard() {
 
   const guestRanges = ["0-20", "20-50", "50-100", "100-150", "150-200", "200+"];
 
-  // Predefined venues with realistic prices for Moldova
-  const predefinedVenues = [
-    { name: "Restaurant Belvedere", pricePerGuest: 450 },
-    { name: "Nobil Event Hall", pricePerGuest: 520 },
-    { name: "Vila Roz", pricePerGuest: 380 },
-    { name: "La Taifas Restaurant", pricePerGuest: 420 },
-    { name: "Phoenix Grand Hall", pricePerGuest: 550 },
-    { name: "Château Vartely", pricePerGuest: 600 },
-    { name: "Restaurant Symposium", pricePerGuest: 410 },
-    { name: "Salina Resort", pricePerGuest: 480 },
-  ];
+  useEffect(() => {
+    const eventId = getEventId();
+    if (!eventId) return;
+
+    let cancelled = false;
+    const hydrateWizard = async () => {
+      try {
+        const event = await wizardService.getWizardEvent(eventId);
+        if (cancelled) return;
+
+        const monthName =
+          event.event_month && event.event_month >= 1 && event.event_month <= 12
+            ? months[event.event_month - 1]
+            : "";
+        const matchedGuestRange =
+          guestRanges.find((range) => getGuestCountFromRange(range) === event.guest_count_estimated) || "";
+
+        setFormData((prev) => {
+          const resolvedDateType = event.date_mode || prev.dateType;
+
+          return {
+            ...prev,
+            type: event.event_type || prev.type,
+            customType: event.title !== "Eveniment nou" ? event.title : prev.customType,
+            status: event.planning_stage || prev.status,
+            dateType: resolvedDateType,
+            exactDate:
+              event.date && resolvedDateType === "exact"
+                ? new Date(event.date).toISOString().slice(0, 10)
+                : "",
+            selectedMonth: resolvedDateType === "month" ? monthName : "",
+            selectedYear:
+              resolvedDateType === "month" && event.event_year
+                ? String(event.event_year)
+                : "",
+            venue: event.venue_name || prev.venue,
+            venueUnknown: event.location_mode === "unknown",
+            venuePricePerGuest:
+              event.venue_price_per_guest || prev.venuePricePerGuest,
+            guestRange: matchedGuestRange || prev.guestRange,
+            budget: event.budget_total_estimated || prev.budget,
+            hasBudget:
+              event.has_budget === false && !event.budget_total_estimated
+                ? prev.hasBudget
+                : event.has_budget ?? prev.hasBudget,
+          };
+        });
+
+        if (event.venue_name && event.venue_price_per_guest) {
+          setVenueSearchTerm(event.venue_name);
+          setCustomVenues((prev) => {
+            const exists = prev.some(
+              (venue) =>
+                venue.name === event.venue_name &&
+                venue.pricePerGuest === event.venue_price_per_guest
+            );
+            if (exists) return prev;
+            return [
+              ...prev,
+              {
+                name: event.venue_name,
+                pricePerGuest: event.venue_price_per_guest,
+              },
+            ];
+          });
+        }
+      } catch (err) {
+        console.error("Failed to hydrate wizard event", err);
+      }
+    };
+
+    hydrateWizard();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEventId]);
 
   // Function to add custom venue
   const handleAddCustomVenue = () => {
     if (newVenueName.trim() && newVenuePrice) {
       const price = parseInt(newVenuePrice);
       if (price > 0 && price <= 1000000) {
-        setCustomVenues([
-          ...customVenues,
+        setCustomVenues((prev) => [
+          ...prev,
           { name: newVenueName.trim(), pricePerGuest: price },
         ]);
-        setFormData({
-          ...formData,
+        setFormData((prev) => ({
+          ...prev,
           venue: newVenueName.trim(),
           venuePricePerGuest: price,
           venueUnknown: false,
-        });
+        }));
         setVenueSearchTerm(newVenueName.trim());
         setNewVenueName("");
         setNewVenuePrice("");
@@ -214,131 +358,96 @@ export function EventWizard() {
 
   // Function to select venue
   const handleSelectVenue = (venueName: string, pricePerGuest: number) => {
-    setFormData({
-      ...formData,
+    setFormData((prev) => ({
+      ...prev,
       venue: venueName,
       venuePricePerGuest: pricePerGuest,
       venueUnknown: false,
-    });
+    }));
     setVenueSearchTerm(venueName);
     setShowVenueDropdown(false);
   };
 
-  // Get all venues (predefined + custom)
-  const allVenues = [...predefinedVenues, ...customVenues];
+  // Load venue templates from backend for step 4
+  useEffect(() => {
+    if (step !== 4) return;
+
+    let cancelled = false;
+    const loadVenueTemplates = async () => {
+      setVenuesLoading(true);
+      try {
+        const templates = await supplierService.getSupplierTemplates({
+          serviceType: "Restaurant",
+          eventType: formData.type || undefined,
+        });
+
+        if (cancelled) return;
+
+        const mappedTemplates = templates.map((template: SupplierTemplateOption) => ({
+          name: template.name,
+          pricePerGuest: template.price,
+        }));
+
+        setVenueTemplates(mappedTemplates);
+      } catch (err) {
+        if (!cancelled) {
+          setVenueTemplates([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setVenuesLoading(false);
+        }
+      }
+    };
+
+    loadVenueTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, formData.type]);
+
+  useEffect(() => {
+    if (step !== 6) return;
+
+    let cancelled = false;
+    const loadServiceCategories = async () => {
+      setServiceCategoriesLoading(true);
+      try {
+        const categories = await supplierService.getServiceCategories();
+        if (!cancelled) {
+          setServiceCategories(categories);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setServiceCategories([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setServiceCategoriesLoading(false);
+        }
+      }
+    };
+
+    loadServiceCategories();
+    return () => {
+      cancelled = true;
+    };
+  }, [step]);
+
+  // Get all venues (backend templates + custom for current event draft)
+  const allVenues = [...venueTemplates, ...customVenues].filter(
+    (venue, index, venues) =>
+      venues.findIndex(
+        (candidate) =>
+          candidate.name === venue.name &&
+          candidate.pricePerGuest === venue.pricePerGuest
+      ) === index
+  );
 
   // Filter venues based on search term
   const filteredVenues = allVenues.filter((venue) =>
     venue.name.toLowerCase().includes(venueSearchTerm.toLowerCase())
   );
-
-  const serviceCategories = [
-    {
-      name: "🎤 Entertainment & atmosferă",
-      services: [
-        "Muzică / DJ",
-        "Formație live",
-        "MC / Moderator",
-        "Animatori (copii / adulți)",
-        "Dansatori / show artistic",
-        "Artiști invitați",
-        "Karaoke",
-        "Momente speciale (ursitoare, magician, focuri reci)",
-      ],
-    },
-    {
-      name: "📸 Media & conținut",
-      services: [
-        "Fotografie",
-        "Videografie",
-        "Dronă",
-        "Photo Booth",
-        "Video Booth 360°",
-        "Cabină foto instant",
-        "Live streaming",
-      ],
-    },
-    {
-      name: "🌸 Decor & styling",
-      services: [
-        "Decor eveniment (general)",
-        "Decor floral",
-        "Aranjamente mese",
-        "Panou foto / backdrop",
-        "Balonistică",
-        "Lumânări / sfeșnice",
-        "Tematică personalizată",
-      ],
-    },
-    {
-      name: "🍽️ Mâncare & băuturi",
-      services: [
-        "Restaurant",
-        "Catering",
-        "Candy bar",
-        "Tort",
-        "Prăjituri / deserturi",
-        "Cocktail bar",
-        "Bar mobil",
-        "Degustări (vin)",
-      ],
-    },
-    {
-      name: "💡 Tehnic & logistic",
-      services: [
-        "Sonorizare",
-        "Lumini",
-        "Ecrane LED / proiector",
-        "Scenă",
-        "Generatoare",
-        "Echipamente speciale",
-      ],
-    },
-    {
-      name: "💄 Beauty & pregătire",
-      services: [
-        "Makeup",
-        "Hairstyling",
-        "Styling vestimentar",
-        "Rochii / costume (închiriere)",
-        "Accesorii",
-      ],
-    },
-    {
-      name: "🚗 Logistică & suport",
-      services: [
-        "Transport invitați",
-        "Transport artiști",
-        "Transfer VIP",
-        "Cazare invitați",
-        "Coordonare ziua evenimentului",
-        "Hostess / personal eveniment",
-      ],
-    },
-    {
-      name: "🧠 Organizare & planificare",
-      services: [
-        "Organizator eveniment",
-        "Wedding planner",
-        "Event manager",
-        "Coordonator ziua evenimentului",
-        "Consultanță eveniment",
-        "Scenariu eveniment (timeline)",
-      ],
-    },
-    {
-      name: "🧾 Print & invitații",
-      services: [
-        "Invitații digitale",
-        "Invitații tipărite",
-        "Meniuri",
-        "Place cards",
-        "Numere de masă",
-        "Panou welcome",
-        "Mărturii invitați",
-      ],
-    },
-  ];
 
   const months = [
     "Ianuarie",
@@ -359,6 +468,11 @@ export function EventWizard() {
     { length: 10 },
     (_, i) => new Date().getFullYear() + i
   );
+  const currentMonthIndex = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const selectedYearNumber = formData.selectedYear
+    ? parseInt(formData.selectedYear, 10)
+    : null;
 
   // Calendar functions
   const getDaysInMonth = (month: number, year: number) => {
@@ -400,7 +514,20 @@ export function EventWizard() {
     return days;
   };
 
+  const isPastCalendarDate = (day: number, month: number, year: number) => {
+    const candidate = new Date(year, month, day);
+    candidate.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return candidate < today;
+  };
+
   const selectDate = (day: number) => {
+    if (isPastCalendarDate(day, calendarMonth, calendarYear)) {
+      return;
+    }
     const dateString = formatDateForInput(day, calendarMonth, calendarYear);
     setFormData({ ...formData, exactDate: dateString });
     setShowCalendar(false);
@@ -423,37 +550,23 @@ export function EventWizard() {
       });
     } else if (currentStep === 3) {
       // Step 3: Data evenimentului
-      const resolvedDate =
-        formData.dateType === "exact" && formData.exactDate
-          ? formData.exactDate
-          : formData.dateType === "month" && formData.selectedMonth
-          ? `${formData.selectedYear || new Date().getFullYear()}-${String(
-              (months.indexOf(formData.selectedMonth) >= 0
-                ? months.indexOf(formData.selectedMonth)
-                : 0) + 1
-            ).padStart(2, "0")}-01`
-          : null;
-
-      await wizardService.updateStep3(eventId, {
-        date: resolvedDate,
-        date_mode: formData.dateType,
-        event_month: formData.selectedMonth
-          ? months.indexOf(formData.selectedMonth) + 1
-          : null,
-        event_year: formData.selectedYear
-          ? parseInt(formData.selectedYear)
-          : null,
-        time: null,
-      });
+      await wizardService.updateStep3(eventId, getStep3Payload());
     } else if (currentStep === 4) {
       // Step 4: Locația
+      const isKnownVenue =
+        !formData.venueUnknown &&
+        !!formData.venue &&
+        formData.venuePricePerGuest > 0;
+
       await wizardService.updateStep4(eventId, {
-        city: formData.venue || "Not specified",
-        venue_city: formData.venue,
-        venue_name: formData.venue,
-        address: formData.venue,
+        city: isKnownVenue ? formData.venue : null,
+        venue_city: isKnownVenue ? formData.venue : null,
+        venue_name: isKnownVenue ? formData.venue : null,
+        address: isKnownVenue ? formData.venue : null,
         location_mode: formData.venueUnknown ? "unknown" : "known",
-        venue_price_per_guest: formData.venuePricePerGuest || undefined,
+        venue_price_per_guest: isKnownVenue
+          ? formData.venuePricePerGuest
+          : undefined,
       });
     } else if (currentStep === 5) {
       // Step 5: Număr invitați (fără buget)
@@ -489,6 +602,20 @@ export function EventWizard() {
           ? formData.budget
           : undefined,
         budget_currency: "MDL",
+      });
+
+      await wizardService.updateStep7(eventId, {
+        budget_items: formData.hasBudget
+          ? [
+              {
+                name: "Buget total estimat",
+                category: "Buget general",
+                estimatedPrice: formData.budget,
+                realPrice: formData.budget,
+                paymentStatus: "unpaid",
+              },
+            ]
+          : [],
       });
     } else if (currentStep === 8) {
       // Step 8: Pachete / Finalizare
@@ -847,9 +974,7 @@ export function EventWizard() {
                   {/* Dată exactă */}
                   <div>
                     <button
-                      onClick={() =>
-                        setFormData({ ...formData, dateType: "exact" })
-                      }
+                      onClick={() => handleDateTypeChange("exact")}
                       className={`w-full p-5 rounded-[2px] border transition-all flex items-center justify-between ${
                         formData.dateType === "exact"
                           ? "border-black bg-white shadow-md"
@@ -879,7 +1004,12 @@ export function EventWizard() {
                           value={
                             formData.exactDate
                               ? new Date(formData.exactDate).toLocaleDateString(
-                                  "en-US"
+                                  "ro-RO",
+                                  {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    year: "numeric",
+                                  }
                                 )
                               : ""
                           }
@@ -982,6 +1112,13 @@ export function EventWizard() {
                             </div>
                             <div className="grid grid-cols-7 gap-1">
                               {renderCalendar().map((dayObj, index) => {
+                                const isPastDate =
+                                  dayObj.isCurrentMonth &&
+                                  isPastCalendarDate(
+                                    dayObj.day,
+                                    calendarMonth,
+                                    calendarYear
+                                  );
                                 const isSelected =
                                   formData.exactDate &&
                                   dayObj.isCurrentMonth &&
@@ -1000,12 +1137,17 @@ export function EventWizard() {
                                     key={index}
                                     onClick={() =>
                                       dayObj.isCurrentMonth &&
+                                      !isPastDate &&
                                       selectDate(dayObj.day)
                                     }
-                                    disabled={!dayObj.isCurrentMonth}
+                                    disabled={
+                                      !dayObj.isCurrentMonth || isPastDate
+                                    }
                                     className={`p-3 text-center rounded-lg transition-all ${
                                       dayObj.isCurrentMonth
-                                        ? isSelected
+                                        ? isPastDate
+                                          ? "text-gray-300 cursor-not-allowed bg-gray-50"
+                                          : isSelected
                                           ? "bg-gray-900 text-white"
                                           : "text-gray-900 hover:bg-gray-100"
                                         : "text-gray-300 cursor-not-allowed"
@@ -1025,9 +1167,7 @@ export function EventWizard() {
                   {/* Luna și anul */}
                   <div>
                     <button
-                      onClick={() =>
-                        setFormData({ ...formData, dateType: "month" })
-                      }
+                      onClick={() => handleDateTypeChange("month")}
                       className={`w-full p-5 rounded-[2px] border transition-all flex items-center justify-between ${
                         formData.dateType === "month"
                           ? "border-black bg-white shadow-md"
@@ -1064,17 +1204,29 @@ export function EventWizard() {
                           </button>
                           {showMonthDropdown && (
                             <div className="absolute top-16 left-0 w-full bg-white border border-gray-200 rounded-[24px] shadow-lg z-20 max-h-60 overflow-y-auto">
-                              {months.map((month) => (
+                              {months.map((month) => {
+                                const monthIndex = months.indexOf(month);
+                                const isDisabled =
+                                  selectedYearNumber === currentYear &&
+                                  monthIndex < currentMonthIndex;
+
+                                return (
                                 <button
                                   key={month}
                                   onClick={() => {
+                                    if (isDisabled) return;
                                     setFormData({
                                       ...formData,
                                       selectedMonth: month,
                                     });
                                     setShowMonthDropdown(false);
                                   }}
-                                  className={`w-full text-left px-4 py-3 hover:bg-amber-50 ${
+                                  disabled={isDisabled}
+                                  className={`w-full text-left px-4 py-3 ${
+                                    isDisabled
+                                      ? "text-gray-300 cursor-not-allowed"
+                                      : "hover:bg-amber-50"
+                                  } ${
                                     month === formData.selectedMonth
                                       ? "bg-amber-50"
                                       : ""
@@ -1082,7 +1234,8 @@ export function EventWizard() {
                                 >
                                   {month}
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -1105,8 +1258,16 @@ export function EventWizard() {
                                 <button
                                   key={year}
                                   onClick={() => {
+                                    const nextSelectedMonth =
+                                      year === currentYear &&
+                                      formData.selectedMonth &&
+                                      months.indexOf(formData.selectedMonth) <
+                                        currentMonthIndex
+                                        ? ""
+                                        : formData.selectedMonth;
                                     setFormData({
                                       ...formData,
+                                      selectedMonth: nextSelectedMonth,
                                       selectedYear: year.toString(),
                                     });
                                     setShowYearDropdown(false);
@@ -1129,9 +1290,7 @@ export function EventWizard() {
 
                   {/* Nu sunt sigur încă */}
                   <button
-                    onClick={() =>
-                      setFormData({ ...formData, dateType: "not-sure" })
-                    }
+                    onClick={() => handleDateTypeChange("not-sure")}
                     className={`w-full p-5 rounded-[2px] border transition-all flex items-center justify-between ${
                       formData.dateType === "not-sure"
                         ? "border-black bg-white shadow-md"
@@ -1185,7 +1344,11 @@ export function EventWizard() {
                     {/* Dropdown menu */}
                     {showVenueDropdown && !formData.venueUnknown && (
                       <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-[2px] shadow-lg max-h-80 overflow-y-auto">
-                        {filteredVenues.length > 0 ? (
+                        {venuesLoading ? (
+                          <div className="p-4 text-gray-500 text-center">
+                            Se încarcă locațiile...
+                          </div>
+                        ) : filteredVenues.length > 0 ? (
                           filteredVenues.map((venue) => (
                             <button
                               key={venue.name}
@@ -1284,14 +1447,18 @@ export function EventWizard() {
                   {/* Opțiune "Nu sunt sigur de locație" */}
                   <button
                     onClick={() => {
-                      setFormData({
-                        ...formData,
-                        venueUnknown: !formData.venueUnknown,
-                        venue: "",
-                        venuePricePerGuest: 0,
-                      });
+                      const nextVenueUnknown = !formData.venueUnknown;
+                      setFormData((prev) => ({
+                        ...prev,
+                        venueUnknown: nextVenueUnknown,
+                        venue: nextVenueUnknown ? "" : prev.venue,
+                        venuePricePerGuest: nextVenueUnknown
+                          ? 0
+                          : prev.venuePricePerGuest,
+                      }));
                       setVenueSearchTerm("");
                       setShowVenueDropdown(false);
+                      setShowAddVenueForm(false);
                     }}
                     className={`w-full p-5 rounded-[2px] border transition-all flex items-center justify-between ${
                       formData.venueUnknown
@@ -1368,6 +1535,12 @@ export function EventWizard() {
                 <p className="text-gray-600 font-['Inter:Regular',sans-serif] text-[15px] mb-10">
                   Primele 3 servicii selectate devin prioritare și vor primi ⭐
                 </p>
+
+                {serviceCategoriesLoading && (
+                  <div className="p-4 border border-[#e5e7eb] rounded-[2px] bg-white text-[#414c5a] mb-6">
+                    Se încarcă serviciile disponibile...
+                  </div>
+                )}
 
                 <div className="space-y-3 text-left">
                   {serviceCategories.map((category) => {
@@ -1557,27 +1730,14 @@ export function EventWizard() {
 
             {step === 8 && (
               <div>
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
-                  <div>
-                    <h3 className="text-[32px] lg:text-[40px] text-[#960010] mb-2 font-['Inter:Medium',sans-serif] font-medium tracking-tight uppercase">
-                      Alege pachetul
-                    </h3>
-                    <p className="text-[#414c5a] font-['Inter:Regular',sans-serif] text-[15px] leading-[21px] tracking-[-0.16px]">
-                      Selectează varianta potrivită sau treci în modul manual.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={handleManualMode}
-                      className={`px-5 py-3 rounded-full border transition-all text-[14px] font-['Inter:Medium',sans-serif] font-medium ${
-                        selectedPackage === "manual"
-                          ? "bg-[#960010] text-white border-[#960010]"
-                          : "bg-white text-[#960010] border-[#960010] hover:bg-[#faf2f3]"
-                      }`}
-                    >
-                      Modul manual
-                    </button>
-                  </div>
+                <div className="mb-10">
+                  <h3 className="text-[32px] lg:text-[40px] text-[#960010] mb-3 font-['Inter:Medium',sans-serif] font-medium tracking-tight uppercase">
+                    PLANUL TĂU ESTE GATA
+                  </h3>
+                  <p className="text-[#414c5a] font-['Inter:Regular',sans-serif] text-[15px] leading-[21px] tracking-[-0.16px]">
+                    Am creat 3 pachete personalizate bazate pe alegerile tale
+                    {" — "}alege varianta care ți se potrivește cel mai bine
+                  </p>
                 </div>
 
                 {packagesLoading && (
@@ -1586,150 +1746,191 @@ export function EventWizard() {
                   </div>
                 )}
 
+                <div className="bg-[rgba(232,232,232,0.5)] border border-[#e7e7e7] rounded-[2px] mb-8 overflow-hidden">
+                  <div className="border-b border-[#e7e7e7] px-[32px] py-[22px]">
+                    <div className="inline-block px-[10px] py-[5px] bg-white border border-[#e7e7e7] rounded-full">
+                      <span className="text-[#960010] font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] uppercase">
+                        Rezumat alegeri
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2">
+                    <div className="border-r border-b border-[#e7e7e7] px-[32px] py-[32px]">
+                      <p className="text-[#960010] font-['Inter:Medium',sans-serif] font-medium text-[32px] leading-none tracking-[-0.64px] uppercase mb-2">
+                        Eveniment
+                      </p>
+                      <p className="text-black font-['Inter:Medium',sans-serif] font-medium text-[20px] leading-[1.08] tracking-[-0.2px] uppercase">
+                        {eventTypes.find((type) => type.value === formData.type)
+                          ?.label || formData.customType || formData.type}
+                      </p>
+                    </div>
+                    <div className="border-b border-[#e7e7e7] px-[32px] py-[32px]">
+                      <p className="text-[#960010] font-['Inter:Medium',sans-serif] font-medium text-[32px] leading-none tracking-[-0.64px] uppercase mb-2">
+                        Invitați
+                      </p>
+                      <p className="text-black font-['Inter:Medium',sans-serif] font-medium text-[20px] leading-[1.08] tracking-[-0.2px] uppercase">
+                        {formData.guestRange} (~
+                        {getGuestCountFromRange(formData.guestRange)} persoane)
+                      </p>
+                    </div>
+                    <div className="border-r border-[#e7e7e7] px-[32px] py-[32px]">
+                      <p className="text-[#960010] font-['Inter:Medium',sans-serif] font-medium text-[32px] leading-none tracking-[-0.64px] uppercase mb-2">
+                        Servicii
+                      </p>
+                      <p className="text-black font-['Inter:Medium',sans-serif] font-medium text-[20px] leading-[1.08] tracking-[-0.2px] uppercase">
+                        {formData.services.length} selectate
+                      </p>
+                    </div>
+                    <div className="px-[32px] py-[32px]">
+                      <p className="text-[#960010] font-['Inter:Medium',sans-serif] font-medium text-[32px] leading-none tracking-[-0.64px] uppercase mb-2">
+                        Buget
+                      </p>
+                      <p className="text-black font-['Inter:Medium',sans-serif] font-medium text-[20px] leading-[1.08] tracking-[-0.2px] uppercase">
+                        {formData.budget.toLocaleString()} MDL
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {packages.length > 0 && (
-                  <div className="grid grid-cols-1 gap-6">
+                  <div className="grid grid-cols-1 gap-6 mb-8">
                     {packages.map((pkg) => {
                       const isSelected = selectedPackage === pkg.id.toString();
-                      const isEconomic = pkg.name === "Pachet Economic";
-                      const isStandard = pkg.name === "Pachet Standard";
-                      const isPremium = pkg.name === "Pachet Premium";
+                      const normalizedName = pkg.name.toLowerCase();
+                      const isEconomic = normalizedName.includes("economic");
+                      const isStandard = normalizedName.includes("standard");
+                      const isPremium = normalizedName.includes("premium");
+                      const sealCount = isPremium ? 3 : isStandard ? 2 : 1;
+                      const isAffordable =
+                        !formData.hasBudget ||
+                        formData.budget <= 0 ||
+                        pkg.total_estimated_cost <= formData.budget;
+                      const difference =
+                        formData.hasBudget && formData.budget > 0
+                          ? Math.max(formData.budget - pkg.total_estimated_cost, 0)
+                          : 0;
+                      const description = isEconomic
+                        ? "Cele mai accesibile opțiuni cu calitate garantată"
+                        : isStandard
+                          ? "Echilibrul perfect între calitate și preț"
+                          : "Servicii premium pentru evenimente de lux";
+                      const displayName = isEconomic
+                        ? "ECONOMIC"
+                        : isStandard
+                          ? "STANDARD"
+                          : "PREMIUM";
 
                       return (
                         <div
                           key={pkg.id}
-                          className={`bg-white border-2 rounded-lg p-6 flex flex-col transition-all ${
+                          className={`relative bg-white rounded-[2px] border-2 px-[32px] py-[28px] transition-all ${
                             isSelected
                               ? "border-[#960010] shadow-xl"
-                              : "border-[#e5e7eb] hover:border-[#960010] hover:shadow-lg"
+                              : isAffordable
+                                ? "border-[#e5e7eb] hover:border-black hover:shadow-lg"
+                                : "border-[#e5e7eb] opacity-50"
                           }`}
                         >
-                          {/* Header with seal */}
-                          <div className="text-center mb-6">
-                            {/* Wax seal icon */}
-                            <div className="w-16 h-16 mx-auto mb-4 bg-[#960010] rounded-full flex items-center justify-center">
-                              <div className="w-12 h-12 bg-[#7a000d] rounded-full flex items-center justify-center">
-                                <div className="w-8 h-8 bg-[#960010] rounded-full"></div>
+                          <div className="flex gap-[7px] items-center mb-[18px]">
+                            {[...Array(sealCount)].map((_, index) => (
+                              <div
+                                key={`${pkg.id}-${index}`}
+                                className="relative w-[50px] h-[50px]"
+                              >
+                                <img
+                                  src={waxSealImg}
+                                  alt=""
+                                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[64.4px] h-[64.4px] object-cover pointer-events-none"
+                                />
                               </div>
-                            </div>
-
-                            {/* Package name */}
-                            <h3 className="text-[32px] font-bold text-[#960010] uppercase tracking-wide mb-2">
-                              {isEconomic && "ECONOMIC"}
-                              {isStandard && "STANDARD"}
-                              {isPremium && "PREMIUM"}
-                            </h3>
-
-                            {/* Description */}
-                            <p className="text-[14px] text-[#6a7282] mb-4">
-                              {isEconomic &&
-                                "Cele mai accesibile opțiuni cu calitate garantată"}
-                              {isStandard &&
-                                "Echilibrul perfect între calitate și preț"}
-                              {isPremium &&
-                                "Servicii premium pentru evenimente de lux"}
-                            </p>
-
-                            {pkg.is_recommended && (
-                              <span className="inline-block px-3 py-1 rounded-full bg-[#faf2f3] text-[#960010] text-[11px] font-semibold uppercase tracking-wide">
-                                Recomandat
-                              </span>
-                            )}
+                            ))}
                           </div>
+                          <h4 className="text-[28px] text-[#960010] font-['Inter:Medium',sans-serif] font-medium leading-[28px] tracking-[-0.56px] uppercase mb-3">
+                            {displayName}
+                          </h4>
+                          <p className="text-[#414c5a] font-['Inter:Regular',sans-serif] text-[15px] leading-[21.43px] tracking-[-0.16px] mb-8">
+                            {description}
+                          </p>
 
                           {/* Services list */}
-                          <div className="flex-1 space-y-4 mb-6">
+                          <div className="space-y-4 mb-8 max-h-72 overflow-y-auto">
                             {pkg.items.map((item) => {
-                              // Calculate guest count from formData
-                              const getGuestCount = (range: string) => {
-                                if (range === "200+") return 250;
-                                if (!range) return 0;
-                                const [min, max] = range.split("-").map(Number);
-                                return Math.round((min + max) / 2);
-                              };
-                              const guestCount = getGuestCount(
+                              const guestCount = getGuestCountFromRange(
                                 formData.guestRange
                               );
-
-                              // Check if pricing is per person/guest
                               const isPerPerson =
                                 item.pricing_model === "PER_PERSON" ||
                                 item.pricing_model === "PER_INVITAT";
+                              const priceBreakdown =
+                                isPerPerson && item.base_price_per_unit
+                                  ? `${item.base_price_per_unit.toLocaleString()} MDL × ${guestCount} invitați`
+                                  : item.matrix_position === "existing"
+                                    ? "Deja selectat"
+                                    : "Preț fix eveniment";
 
                               return (
-                                <div
-                                  key={item.id}
-                                  className="flex justify-between items-center"
-                                >
-                                  <div className="flex-1">
-                                    <p className="text-[16px] font-medium text-[#101828] mb-1">
-                                      {item.supplier_name_snapshot}
-                                    </p>
-                                    <p className="text-[12px] text-[#6a7282]">
-                                      {item.matrix_position === "existing"
-                                        ? "Deja selectat"
-                                        : isPerPerson &&
-                                          item.base_price_per_unit
-                                        ? `${item.base_price_per_unit.toLocaleString()} MDL × ${guestCount} invitați`
-                                        : "Preț fix eveniment"}
-                                    </p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-[18px] font-semibold text-[#101828]">
-                                      {item.estimated_cost.toLocaleString()} MDL
-                                    </p>
-                                    {item.supplier_rating_snapshot && (
-                                      <div className="flex items-center justify-end gap-1 mt-1">
-                                        <span className="text-[#960010]">
-                                          ★
-                                        </span>
-                                        <span className="text-[12px] text-[#6a7282]">
-                                          {item.supplier_rating_snapshot.toFixed(
+                                <div key={item.id} className="border-b border-[#e5e7eb] pb-4 last:border-0">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1">
+                                      <p className="text-[15px] text-black font-['Inter:Medium',sans-serif] font-medium">
+                                        {item.supplier_name_snapshot}
+                                      </p>
+                                      <p className="text-[13px] text-[#4a5565] font-['Inter:Regular',sans-serif] mt-1">
+                                        {priceBreakdown}
+                                      </p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      <p className="text-[16px] text-black font-['Inter:Medium',sans-serif] font-medium">
+                                        {item.estimated_cost.toLocaleString()}{" "}
+                                        MDL
+                                      </p>
+                                      <div className="flex items-center gap-1 mt-1 justify-end">
+                                        <Star className="w-3.5 h-3.5 fill-[#960010] text-[#960010]" />
+                                        <span className="text-[13px] text-[#4a5565] font-['Inter:Regular',sans-serif]">
+                                          {item.supplier_rating_snapshot?.toFixed(
                                             1
-                                          )}
+                                          ) || "0.0"}
                                         </span>
                                       </div>
-                                    )}
+                                    </div>
                                   </div>
                                 </div>
                               );
                             })}
                           </div>
 
-                          {/* Divider */}
-                          <div className="border-t border-[#e5e7eb] pt-4 mb-6">
-                            {/* Total */}
-                            <div className="flex justify-between items-center mb-2">
-                              <span className="text-[14px] text-[#6a7282] uppercase tracking-wide">
-                                TOTAL PACHET
+                          <div className="border-t-2 border-[#e5e7eb] pt-6 mb-6">
+                            <div className="flex justify-between items-center mb-3">
+                              <span className="text-[#4a5565] font-['Inter:Regular',sans-serif] text-[13px] uppercase tracking-wider">
+                                Total pachet
                               </span>
-                              <span className="text-[28px] font-bold text-[#960010]">
+                              <span className="text-[32px] text-[#960010] font-['Inter:Medium',sans-serif] font-medium leading-none tracking-[-1px]">
                                 {pkg.total_estimated_cost.toLocaleString()} MDL
                               </span>
                             </div>
 
-                            {/* Savings indicator */}
-                            <div className="flex items-center justify-end gap-1 text-[#960010]">
-                              <span className="text-[12px]">📈</span>
-                              <span className="text-[12px] font-medium">
-                                Economisești{" "}
-                                {Math.round(
-                                  pkg.total_estimated_cost * 0.1
-                                ).toLocaleString()}{" "}
-                                MDL
-                              </span>
-                            </div>
+                            {isAffordable && (
+                              <div className="flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4 text-[#960010]" />
+                                <span className="text-[#960010] font-['Inter:Regular',sans-serif] text-[14px] leading-[21px]">
+                                  Economisești {difference.toLocaleString()} MDL
+                                </span>
+                              </div>
+                            )}
                           </div>
 
-                          {/* Select button */}
                           <button
                             onClick={() => handleSelectPackage(pkg.id)}
-                            className={`w-full py-4 rounded-full text-[16px] font-semibold uppercase tracking-wide transition-all ${
+                            disabled={!isAffordable}
+                            className={`w-full py-4 rounded-full transition-all font-['Inter:Medium',sans-serif] font-medium text-[16px] tracking-[-0.2px] uppercase ${
                               isSelected
-                                ? "bg-[#960010] text-white"
-                                : "bg-[#101828] text-white hover:bg-[#960010]"
+                                ? "bg-[#960010] text-white hover:bg-black"
+                                : isAffordable
+                                  ? "bg-black hover:bg-[#960010] text-white"
+                                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
                             }`}
                           >
-                            {isSelected ? "SELECTAT" : "ALEGE PACHETUL"}
+                            {isSelected ? "✓ Selectat" : "Alege pachetul"}
                           </button>
                         </div>
                       );
@@ -1737,10 +1938,63 @@ export function EventWizard() {
                   </div>
                 )}
 
-                <div className="mt-8 p-4 bg-[#faf2f3] border border-[#f3d9de] rounded-[2px] text-[#960010] text-[14px]">
-                  Pachetul selectat va crea automat furnizorii, bugetul și
-                  checklist-ul pentru acest eveniment. În modul manual nu se
-                  creează nimic automat.
+                <div
+                  className={`relative bg-white rounded-[2px] border-2 px-[32px] py-[32px] transition-all cursor-pointer ${
+                    selectedPackage === "manual"
+                      ? "border-[#960010] shadow-xl"
+                      : "border-[#e5e7eb] hover:border-black hover:shadow-lg"
+                  }`}
+                  onClick={handleManualMode}
+                >
+                  <div className="inline-block px-4 py-2 rounded-full text-[11px] font-['Inter:Semi_Bold',sans-serif] font-semibold uppercase tracking-wider mb-6 bg-[#faf2f3] text-[#960010] border-2 border-[#960010]">
+                    🎯 Flexibil
+                  </div>
+
+                  <h4 className="text-[28px] text-[#960010] font-['Inter:Medium',sans-serif] font-medium leading-none tracking-[-0.56px] uppercase mb-3">
+                    Aleg manual furnizorii
+                  </h4>
+
+                  <p className="text-[#414c5a] font-['Inter:Regular',sans-serif] text-[15px] leading-[21px] tracking-[-0.16px] mb-8">
+                    Prefer să explorez și să aleg fiecare furnizor individual
+                    din platformă
+                  </p>
+
+                  <div className="space-y-4 mb-8">
+                    <div className="flex items-start gap-3">
+                      <Check className="w-5 h-5 text-[#960010] flex-shrink-0 mt-0.5" />
+                      <p className="text-[15px] text-black font-['Inter:Regular',sans-serif] leading-[21px]">
+                        Control complet asupra selecției
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <Check className="w-5 h-5 text-[#960010] flex-shrink-0 mt-0.5" />
+                      <p className="text-[15px] text-black font-['Inter:Regular',sans-serif] leading-[21px]">
+                        Compari mai mulți furnizori
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <Check className="w-5 h-5 text-[#960010] flex-shrink-0 mt-0.5" />
+                      <p className="text-[15px] text-black font-['Inter:Regular',sans-serif] leading-[21px]">
+                        Negociezi prețurile direct
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleManualMode();
+                    }}
+                    className={`w-full py-4 rounded-full transition-all font-['Inter:Medium',sans-serif] font-medium text-[16px] tracking-[-0.2px] uppercase ${
+                      selectedPackage === "manual"
+                        ? "bg-[#960010] text-white hover:bg-black"
+                        : "bg-black hover:bg-[#960010] text-white"
+                    }`}
+                  >
+                    {selectedPackage === "manual"
+                      ? "✓ Selectat"
+                      : "Aleg manual"}
+                  </button>
                 </div>
               </div>
             )}

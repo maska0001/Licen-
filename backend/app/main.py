@@ -1,12 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from app.routers import auth, events, guests, suppliers, budget, tables, checklist, landing, public, wizard
 from app.database.session import engine, Base
 from app import models
 from app.core.config import settings
+from app.services.service_catalog import ensure_service_catalog
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+with Session(bind=engine) as db:
+    ensure_service_catalog(db)
 
 app = FastAPI(
     title="Event Management API",

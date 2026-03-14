@@ -474,6 +474,20 @@ def seed_suppliers():
                     {"event_type": "default", "base_price": 350, "price_type": "PER_PERSON"},
                 ]
             },
+            {
+                "name": "Poseidon",
+                "service_type": "Restaurant",
+                "description": "Restaurant de test pentru verificarea încărcării din backend",
+                "phone": "+373 22 999 000",
+                "email": "contact@poseidon.md",
+                "rating": 5.0,
+                "prices": [
+                    {"event_type": "wedding", "base_price": 1000, "price_type": "PER_PERSON"},
+                    {"event_type": "birthday", "base_price": 1000, "price_type": "PER_PERSON"},
+                    {"event_type": "corporate", "base_price": 1000, "price_type": "PER_PERSON"},
+                    {"event_type": "default", "base_price": 1000, "price_type": "PER_PERSON"},
+                ]
+            },
             
             # Decor floral
             {

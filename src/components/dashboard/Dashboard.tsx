@@ -33,6 +33,7 @@ const svgPaths = {
 };
 import { StatsCard } from "./StatsCard";
 import { calculateSupplierPrice } from "../../utils/pricing";
+import { formatEventDate } from "../../utils/eventDate";
 
 export function Dashboard() {
   const { setCurrentView, activeEventId } = useAppContext();
@@ -344,13 +345,12 @@ export function Dashboard() {
                 {/* Bottom Left - Data evenimentului */}
                 <div className="flex flex-col gap-[8px] items-start px-[32px] py-[40px] border-r border-[#e7e7e7]">
                   <p className="font-medium leading-none not-italic text-[#960010] text-[44px] tracking-[-0.88px] uppercase w-full">
-                    {event.date
-                      ? new Date(event.date).toLocaleDateString("ro-RO", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        })
-                      : "N/A"}
+                    {formatEventDate({
+                      date: event.date,
+                      dateMode: event.date_mode,
+                      eventMonth: event.event_month,
+                      eventYear: event.event_year,
+                    })}
                   </p>
                   <p className="font-medium leading-[1.08] not-italic text-[20px] text-black tracking-[-0.2px] uppercase w-full">
                     DATA EVENIMENTULUI
