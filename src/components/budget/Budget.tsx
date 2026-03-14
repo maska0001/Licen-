@@ -14,7 +14,7 @@ export function Budget() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'paid' | 'deposit' | 'unpaid'>('all');
-  const [sortBy, setSortBy] = useState<'price-asc' | 'price-desc'>('price-asc');
+  const [sortBy, setSortBy] = useState<'price-asc' | 'price-desc' | 'recent-updated'>('recent-updated');
   const [newItem, setNewItem] = useState({
     category: '📋 General',
     name: '',
@@ -53,6 +53,7 @@ export function Budget() {
           estimatedPrice: item.estimated_cost || 0,
           realPrice: item.actual_cost || 0,
           paymentStatus: item.payment_status || 'unpaid',
+          updatedAt: item.updated_at || item.created_at || null,
         }));
         setBudgetItems(mappedBudgetItems);
       } catch (error) {
@@ -105,7 +106,7 @@ export function Budget() {
       // Update local state
       setBudgetItems(budgetItems.map(item =>
         item.id === editingId
-          ? { ...item, ...editValues }
+          ? { ...item, ...editValues, updatedAt: new Date().toISOString() }
           : item
       ));
       
@@ -145,6 +146,7 @@ export function Budget() {
         estimatedPrice: createdItem.estimated_cost || 0,
         realPrice: createdItem.actual_cost || 0,
         paymentStatus: createdItem.payment_status || 'unpaid',
+        updatedAt: createdItem.updated_at || createdItem.created_at || null,
       };
       setBudgetItems([...budgetItems, mappedItem]);
       
@@ -210,6 +212,12 @@ export function Budget() {
     const sorted = [...items];
     
     switch (sortBy) {
+      case 'recent-updated':
+        return sorted.sort((a, b) => {
+          const left = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const right = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return right - left;
+        });
       case 'price-asc':
         return sorted.sort((a, b) => a.estimatedPrice - b.estimatedPrice);
       case 'price-desc':
@@ -393,13 +401,14 @@ export function Budget() {
                   onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                   className="h-[40px] px-[16px] border border-[#e7e7e7] text-[#364153] rounded-full font-normal text-[16px] leading-[24px] tracking-[-0.3125px] hover:border-[#d1d5dc] transition-all focus:outline-none focus:border-[#960010] cursor-pointer bg-white"
                 >
+                  <option value="recent-updated">Ultimele modificări</option>
                   <option value="price-asc">Preț (crescător)</option>
                   <option value="price-desc">Preț (descrescător)</option>
                 </select>
               </div>
             </div>
 
-            {sortBy === 'price-asc' || sortBy === 'price-desc' ? (
+            {sortBy === 'price-asc' || sortBy === 'price-desc' || sortBy === 'recent-updated' ? (
               // Tabel pentru sortare după preț cu editare inline
               <div className="overflow-x-auto">
                 <table className="w-full">

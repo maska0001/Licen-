@@ -5,10 +5,16 @@ export interface Supplier {
   event_id: number;
   name: string;
   category: string;
+  service_id?: number | null;
+  service_name?: string | null;
+  service_group?: string | null;
   contact?: string;
   location?: string;
   price: number;
   price_type: string;
+  original_price?: number | null;
+  original_price_type?: string | null;
+  is_price_modified?: boolean;
   rating: number;
   selected: boolean;
   is_custom: boolean;
@@ -18,6 +24,9 @@ export interface SupplierTemplateOption {
   id: string;
   name: string;
   category: string;
+  service_id?: number | null;
+  service_name?: string | null;
+  service_group?: string | null;
   contact?: string;
   location?: string;
   price: number;
@@ -32,9 +41,16 @@ export interface ServiceCategoryOption {
   services: string[];
 }
 
+export interface ServiceOption {
+  id: number;
+  name: string;
+  group?: string | null;
+}
+
 export interface SupplierCreate {
   name: string;
-  category: string;
+  category?: string;
+  service_id?: number;
   contact?: string;
   location?: string;
   price?: number;
@@ -47,6 +63,7 @@ export interface SupplierCreate {
 export interface SupplierUpdate {
   name?: string;
   category?: string;
+  service_id?: number;
   contact?: string;
   location?: string;
   price?: number;
@@ -77,6 +94,11 @@ export const supplierService = {
 
   async getServiceCategories(): Promise<ServiceCategoryOption[]> {
     const response = await api.get('/suppliers/service-categories');
+    return response.data;
+  },
+
+  async getServices(): Promise<ServiceOption[]> {
+    const response = await api.get('/suppliers/services');
     return response.data;
   },
 

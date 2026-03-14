@@ -4,7 +4,8 @@ from typing import Optional
 
 class SupplierCreate(BaseModel):
     name: str
-    category: str
+    category: Optional[str] = None
+    service_id: Optional[int] = None
     contact: Optional[str] = None
     location: Optional[str] = None
     price: Optional[float] = 0.0
@@ -17,6 +18,7 @@ class SupplierCreate(BaseModel):
 class SupplierUpdate(BaseModel):
     name: Optional[str] = None
     category: Optional[str] = None
+    service_id: Optional[int] = None
     contact: Optional[str] = None
     location: Optional[str] = None
     price: Optional[float] = None
@@ -31,10 +33,16 @@ class SupplierResponse(BaseModel):
     event_id: int
     name: str
     category: str
+    service_id: Optional[int] = None
+    service_name: Optional[str] = None
+    service_group: Optional[str] = None
     contact: Optional[str]
     location: Optional[str]
     price: float
     price_type: str
+    original_price: Optional[float] = None
+    original_price_type: Optional[str] = None
+    is_price_modified: bool = False
     rating: float
     selected: bool
     is_custom: bool

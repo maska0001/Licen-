@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 from app.models.budget import PaymentStatus
 
 
@@ -30,6 +31,8 @@ class BudgetItemResponse(BaseModel):
     estimated_cost: float
     actual_cost: float
     payment_status: PaymentStatus
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

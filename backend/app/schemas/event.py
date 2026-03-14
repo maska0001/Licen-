@@ -136,6 +136,7 @@ class WizardStep6Update(BaseModel):
     package_id: Optional[str] = None
     enabled_modules: Optional[List[str]] = None
     services: Optional[List[str]] = None  # selected service categories
+    service_ids: Optional[List[int]] = None
 
 
 class WizardBudgetItemCreate(BaseModel):

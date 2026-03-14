@@ -12,7 +12,6 @@ import { LandingBuilder } from './components/landing/LandingBuilder';
 import { PublicLanding } from './components/landing/PublicLanding';
 import { MarketingLanding } from './components/marketing/MarketingLanding';
 import { EventSidebar } from './components/sidebar/EventSidebar';
-import { defaultSuppliers } from './data/suppliers';
 import polubviLogo from 'figma:asset/e7119f979999e2fe824d2d9bc62d9e86ce9708cd.png';
 import { authService, eventService } from './services';
 import { mapEventFromApi } from './utils/mapEventFromApi';
@@ -61,7 +60,7 @@ interface Supplier {
   name: string;
   category: string;
   price: number;
-  priceType: 'FIX_EVENT' | 'PER_INVITAT' | 'PER_ORA' | 'PER_UNITATE' | 'PACHET' | 'ESTIMATIV';
+  priceType: 'FIX_EVENT' | 'PER_INVITAT';
   unitLabel?: string;
   minUnits?: number;
   rating: number;
@@ -148,7 +147,7 @@ export default function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [guests, setGuests] = useState<Guest[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(defaultSuppliers);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
@@ -162,7 +161,7 @@ export default function App() {
       setActiveEventId(null);
       setCurrentView('wizard');
       setGuests([]);
-      setSuppliers(defaultSuppliers);
+      setSuppliers([]);
       setBudgetItems([]);
       setTables([]);
       setChecklist([]);
@@ -209,7 +208,7 @@ export default function App() {
     const loadAll = async () => {
       if (!isAuthenticated || !activeEventId) {
         setGuests([]);
-        setSuppliers(defaultSuppliers);
+        setSuppliers([]);
         setBudgetItems([]);
         setTables([]);
         setChecklist([]);
@@ -224,7 +223,7 @@ export default function App() {
           checklistService.getChecklist(parseInt(activeEventId)),
         ]);
         setGuests(g || []);
-        setSuppliers(s || defaultSuppliers);
+        setSuppliers(s || []);
         
         // Map budget items from API to frontend structure
         const mappedBudgetItems = (b || []).map((item: any) => ({

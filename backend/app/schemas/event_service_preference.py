@@ -5,6 +5,7 @@ from datetime import datetime
 
 class EventServicePreferenceBase(BaseModel):
     service_type: str
+    service_id: Optional[int] = None
     priority: Optional[int] = 0
     is_required: Optional[bool] = False
 

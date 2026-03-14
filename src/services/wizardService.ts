@@ -54,6 +54,7 @@ export interface Step6Data {
   package_id?: string | undefined;
   enabled_modules?: string[];
   services?: string[];
+  service_ids?: number[];
 }
 
 export interface WizardSupplier {
@@ -85,6 +86,7 @@ export interface Step8Data {
 export interface PackageItem {
   id: number;
   service_type: string;
+  service_id?: number | null;
   supplier_template_id?: number;
   estimated_cost: number;
   supplier_name_snapshot: string;

@@ -30,6 +30,7 @@ from app.schemas.event import (
 from app.schemas.package import EventPackageResponse
 from app.core.security import get_current_user
 from app.services.pricing_service import resolve_supplier_pricing
+from app.services.service_relations import get_service_by_id, get_service_by_name
 
 router = APIRouter(prefix="/wizard/events", tags=["Event Wizard"])
 
@@ -283,19 +284,31 @@ def update_step4(
         if existing_supplier:
             existing_supplier.name = resolved_venue_name
             existing_supplier.location = resolved_city
+            existing_supplier.service_id = getattr(
+                get_service_by_name(db, "Restaurant"), "id", None
+            )
             existing_supplier.price = resolved_venue_price
             existing_supplier.price_type = "PER_INVITAT"
+            if existing_supplier.original_price is None:
+                existing_supplier.original_price = resolved_venue_price
+            if existing_supplier.original_price_type is None:
+                existing_supplier.original_price_type = "PER_INVITAT"
             existing_supplier.selected = True
             existing_supplier.is_custom = True
+            existing_supplier.category = "Restaurant"
             if not existing_supplier.rating:
                 existing_supplier.rating = 4.5
         else:
+            restaurant_service = get_service_by_name(db, "Restaurant")
             venue_supplier = Supplier(
                 name=resolved_venue_name,
                 category="Restaurant",
+                service_id=getattr(restaurant_service, "id", None),
                 location=resolved_city,
                 price=resolved_venue_price,
                 price_type="PER_INVITAT",
+                original_price=resolved_venue_price,
+                original_price_type="PER_INVITAT",
                 selected=True,
                 event_id=event.id,
                 is_custom=True,
@@ -385,12 +398,29 @@ def update_step6(
     event.wizard_step = max(event.wizard_step, 6)
 
     # Persist service preferences if provided
-    if step6_data.services is not None:
+    if step6_data.services is not None or step6_data.service_ids is not None:
         db.query(EventServicePreference).filter(EventServicePreference.event_id == event.id).delete(synchronize_session=False)
-        for idx, service in enumerate(step6_data.services):
+        resolved_services = []
+
+        if step6_data.service_ids:
+            for idx, service_id in enumerate(step6_data.service_ids):
+                service = get_service_by_id(db, service_id)
+                if service:
+                    resolved_services.append((idx, service))
+
+        elif step6_data.services:
+            for idx, service_name in enumerate(step6_data.services):
+                service = get_service_by_name(db, service_name)
+                if service:
+                    resolved_services.append((idx, service))
+                else:
+                    resolved_services.append((idx, None))
+
+        for idx, service in resolved_services:
             pref = EventServicePreference(
                 event_id=event.id,
-                service_type=service,
+                service_type=service.name if service else step6_data.services[idx],
+                service_id=service.id if service else None,
                 priority=idx,
                 is_required=False
             )
@@ -553,75 +583,6 @@ def get_wizard_event(
     return event
 
 
-def _normalize_category(category: str) -> str:
-    """
-    Normalize category names to match between frontend (with emoji) and backend (simple names)
-    """
-    print(f"      DEBUG _normalize_category: input='{category}'")
-    
-    # Mapping from emoji categories to simple service types
-    category_mapping = {
-        "🎤 Entertainment & atmosferă": ["Muzică / DJ", "Formație live", "MC / Moderator", "Animatori copii"],
-        "📸 Media & conținut": ["Fotografie", "Videografie", "Drone", "Livestream"],
-        "🌸 Decor & styling": ["Decor eveniment (general)", "Decor floral", "Baloane", "Mobilier"],
-        "🍽️ Mâncare & băuturi": ["Restaurant", "Catering", "Tort", "Bar"],
-        "💡 Tehnic & logistic": ["Sonorizare", "Lumini", "Generatoare", "Securitate"],
-        "💄 Beauty & pregătire": ["Makeup", "Hairstyling", "Manichiură", "Costume"],
-        "🚗 Logistică & suport": ["Transport invitați", "Transport artiști", "Parcare", "Cazare"],
-        "🧠 Organizare & planificare": ["Organizator eveniment", "Wedding planner", "Consultant", "Coordonator"],
-        "🧾 Print & invitații": ["Invitații digitale", "Invitații tipărite", "Meniu", "Marturii"]
-    }
-    
-    # If category has emoji, find the corresponding simple service types
-    for emoji_cat, simple_services in category_mapping.items():
-        if category == emoji_cat:
-            print(f"      DEBUG: Found emoji category match, returning list: {simple_services}")
-            return simple_services  # Return list of simple service types
-        if category in simple_services:
-            print(f"      DEBUG: Found in simple services, returning as-is: {category}")
-            return category  # Already a simple service type
-    
-    # Remove emoji from category if present
-    import re
-    clean_category = re.sub(r'^[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251]+\s*', '', category).strip()
-    print(f"      DEBUG: Cleaned category (removed emoji): '{clean_category}'")
-    return clean_category
-
-
-def _categories_match(supplier_category: str, service_type: str) -> bool:
-    """
-    Check if a supplier category matches a service type, handling emoji categories
-    """
-    print(f"    DEBUG _categories_match: supplier_category='{supplier_category}', service_type='{service_type}'")
-    
-    # Direct match
-    if supplier_category == service_type:
-        print(f"    DEBUG: Direct match found")
-        return True
-    
-    # Normalize both and check
-    normalized_supplier = _normalize_category(supplier_category)
-    normalized_service = _normalize_category(service_type)
-    
-    print(f"    DEBUG: normalized_supplier={normalized_supplier}, normalized_service={normalized_service}")
-    
-    # If normalized_supplier is a list (from emoji category), check if service_type is in it
-    if isinstance(normalized_supplier, list):
-        result = service_type in normalized_supplier or normalized_service in normalized_supplier
-        print(f"    DEBUG: Supplier is list, checking if service in list: {result}")
-        return result
-    
-    # If normalized_service is a list, check if supplier_category is in it
-    if isinstance(normalized_service, list):
-        result = supplier_category in normalized_service or normalized_supplier in normalized_service
-        print(f"    DEBUG: Service is list, checking if supplier in list: {result}")
-        return result
-    
-    result = normalized_supplier == normalized_service
-    print(f"    DEBUG: Simple comparison: {result}")
-    return result
-
-
 def _pick_positions(sorted_list):
     if len(sorted_list) == 0:
         return None, None, None
@@ -645,8 +606,15 @@ def generate_packages(
     service_prefs = db.query(EventServicePreference).filter(
         EventServicePreference.event_id == event.id
     ).order_by(EventServicePreference.priority).all()
-    service_types = [p.service_type for p in service_prefs]
-    if not service_types:
+    service_entries = [
+        {
+            "id": p.service_id,
+            "name": p.service.name if getattr(p, "service", None) else p.service_type,
+        }
+        for p in service_prefs
+    ]
+    service_types = [entry["name"] for entry in service_entries]
+    if not service_entries:
         raise HTTPException(status_code=400, detail="No service categories selected for this event.")
 
     # 1.5. Check if we already have compatible packages
@@ -654,7 +622,10 @@ def generate_packages(
     if existing_packages:
         # Check if existing packages cover the same service types
         for pkg in existing_packages:
-            pkg_service_types = [item.service_type for item in pkg.items]
+            pkg_service_types = [
+                item.service.name if getattr(item, "service", None) else item.service_type
+                for item in pkg.items
+            ]
             # If we have packages that cover all current service types, return them
             if set(service_types).issubset(set(pkg_service_types)):
                 for pkg in existing_packages:
@@ -678,25 +649,37 @@ def generate_packages(
         print(f"  - {supplier.name} ({supplier.category}) - selected: {supplier.selected}")
     
     # 3. Identify categories that already have suppliers using smart matching
-    covered_service_types = []
-    for service_type in service_types:
+    covered_service_ids = set()
+    covered_service_names = set()
+    for service_entry in service_entries:
+        service_id = service_entry["id"]
+        service_type = service_entry["name"]
         print(f"DEBUG: Checking service_type: {service_type}")
         for supplier in existing_suppliers:
-            # Use exact matching for service types
-            if supplier.category == service_type:
-                covered_service_types.append(service_type)
+            supplier_service = getattr(supplier, "service", None)
+            supplier_service_id = getattr(supplier_service, "id", None)
+            supplier_service_name = supplier_service.name if supplier_service else supplier.category
+
+            if service_id and supplier_service_id and supplier_service_id == service_id:
+                covered_service_ids.add(service_id)
+                covered_service_names.add(service_type)
                 print(f"  - Found exact match: {supplier.name} ({supplier.category}) for {service_type}")
                 break
-            # Also check for common variations
-            elif _categories_match(supplier.category, service_type):
-                covered_service_types.append(service_type)
+            elif not service_id and supplier_service_name == service_type:
+                covered_service_names.add(service_type)
                 print(f"  - Found fuzzy match: {supplier.name} ({supplier.category}) for {service_type}")
                 break
     
-    print(f"DEBUG: Covered service types: {covered_service_types}")
+    print(f"DEBUG: Covered service ids: {covered_service_ids}")
+    print(f"DEBUG: Covered service names: {covered_service_names}")
     
     # 4. Categories that need supplier options
-    missing_categories = [s for s in service_types if s not in covered_service_types]
+    missing_categories = [
+        entry
+        for entry in service_entries
+        if (entry["id"] and entry["id"] not in covered_service_ids)
+        or (not entry["id"] and entry["name"] not in covered_service_names)
+    ]
     print(f"DEBUG: Missing categories: {missing_categories}")
     print(f"DEBUG: All service types: {service_types}")
 
@@ -740,14 +723,19 @@ def generate_packages(
         existing_total_cost += final_price
         print(f"DEBUG: Adding supplier {supplier.name} ({supplier.category}) - ${final_price} to all packages")
         for i, package in enumerate(packages):
+            supplier_service_name = (
+                supplier.service.name if getattr(supplier, "service", None) else supplier.category
+            )
             item = EventPackageItem(
                 package_id=package.id,
-                service_type=supplier.category,
+                service_type=supplier_service_name,
+                service_id=getattr(getattr(supplier, "service", None), "id", None),
                 supplier_template_id=None,  # No template for existing suppliers
                 pricing_row_id=None,
                 supplier_name_snapshot=supplier.name,
                 estimated_cost=final_price,
                 supplier_rating_snapshot=supplier.rating,
+                supplier_is_custom_snapshot=supplier.is_custom,
                 matrix_position="existing",  # Mark as existing supplier
                 pricing_model=supplier.price_type,
                 base_price_per_unit=supplier.price,
@@ -761,12 +749,18 @@ def generate_packages(
     totals = [existing_total_cost, existing_total_cost, existing_total_cost]
     print(f"DEBUG: Starting totals: {totals}")
 
-    for stype in missing_categories:
+    for service_entry in missing_categories:
+        stype = service_entry["name"]
         print(f"DEBUG: Generating options for missing category: {stype}")
-        pricings = db.query(SupplierTemplatePricing).join(SupplierTemplate).filter(
-            SupplierTemplate.service_type == stype,
+        service = get_service_by_id(db, service_entry["id"]) or get_service_by_name(db, stype)
+        pricings_query = db.query(SupplierTemplatePricing).join(SupplierTemplate).filter(
             SupplierTemplatePricing.is_active == True,
-        ).all()
+        )
+        if service:
+            pricings_query = pricings_query.filter(SupplierTemplate.service_id == service.id)
+        else:
+            pricings_query = pricings_query.filter(SupplierTemplate.service_type == stype)
+        pricings = pricings_query.all()
         
         print(f"DEBUG: Found {len(pricings)} pricing options for {stype}")
         
@@ -796,20 +790,22 @@ def generate_packages(
             
             # Calculate final price based on pricing model
             final_price = choice.base_price
-            if choice.pricing_model == "PER_PERSON" and event.guest_count:
+            if choice.pricing_model == "PER_INVITAT" and event.guest_count:
                 final_price = choice.base_price * event.guest_count
-                print(f"DEBUG: {choice.template.name} - PER_PERSON pricing: {choice.base_price} x {event.guest_count} = {final_price}")
+                print(f"DEBUG: {choice.template.name} - PER_INVITAT pricing: {choice.base_price} x {event.guest_count} = {final_price}")
             else:
                 print(f"DEBUG: {choice.template.name} - Fixed pricing: {final_price}")
             
             item = EventPackageItem(
                 package_id=packages[i].id,
                 service_type=stype,
+                service_id=getattr(service, "id", None),
                 supplier_template_id=choice.supplier_template_id,
                 pricing_row_id=choice.id,
                 supplier_name_snapshot=choice.template.name,
                 estimated_cost=final_price,
                 supplier_rating_snapshot=choice.template.rating,
+                supplier_is_custom_snapshot=False,
                 matrix_position="low" if i == 0 else "middle" if i == 1 else "high",
                 pricing_model=choice.pricing_model,
                 base_price_per_unit=choice.base_price,
@@ -869,24 +865,39 @@ def select_package(
     db.query(ChecklistItem).filter(ChecklistItem.event_id == event.id).delete(synchronize_session=False)
 
     for item in package.items:
+        service = get_service_by_id(db, item.service_id) or get_service_by_name(
+            db, item.service_type
+        )
+        service_name = service.name if service else item.service_type
+        resolved_price_type = (
+            "PER_INVITAT" if item.pricing_model == "PER_INVITAT" else "FIX_EVENT"
+        )
+        resolved_base_price = (
+            item.base_price_per_unit
+            if resolved_price_type == "PER_INVITAT" and item.base_price_per_unit is not None
+            else item.estimated_cost
+        )
         # create supplier snapshot
         supplier = Supplier(
             name=item.supplier_name_snapshot,
-            category=item.service_type,
-            price=item.estimated_cost,
-            price_type="FIX_EVENT",
+            category=service_name,
+            service_id=getattr(service, "id", None),
+            price=resolved_base_price,
+            price_type=resolved_price_type,
+            original_price=resolved_base_price,
+            original_price_type=resolved_price_type,
             selected=True,
             event_id=event.id,
-            is_custom=True
+            is_custom=bool(item.supplier_is_custom_snapshot),
         )
         db.add(supplier)
         db.flush()
 
         budget_item = BudgetItem(
-            category=item.service_type,
+            category=service_name,
             name=item.supplier_name_snapshot,
             estimated_cost=item.estimated_cost,
-            actual_cost=item.estimated_cost,
+            actual_cost=0.0,
             payment_status=PaymentStatus.unpaid,
             supplier_id=supplier.id,
             event_id=event.id
@@ -894,8 +905,8 @@ def select_package(
         db.add(budget_item)
 
         task = ChecklistItem(
-            task=f"Contact {item.supplier_name_snapshot} ({item.service_type})",
-            category=item.service_type,
+            task=f"Contact {item.supplier_name_snapshot} ({service_name})",
+            category=service_name,
             completed=False,
             event_id=event.id
         )

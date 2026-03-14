@@ -5,8 +5,10 @@ cu furnizori de test pentru generarea pachetelor.
 
 from sqlalchemy.orm import Session
 from app.database.session import SessionLocal, engine, Base
+from app.models.service import Service
 from app.models.supplier_template import SupplierTemplate
 from app.models.supplier_template_pricing import SupplierTemplatePricing
+from app.services.service_catalog import ensure_service_catalog
 
 # Creează tabelele dacă nu există
 Base.metadata.create_all(bind=engine)
@@ -55,7 +57,7 @@ AUTO_SERVICE_GROUPS = [
             "Bar mobil",
             "Degustări (vin)",
         ],
-        "price_type": "PER_PERSON",
+        "price_type": "PER_INVITAT",
         "tiers": [120, 220, 350],
     },
     {
@@ -189,6 +191,12 @@ def seed_suppliers():
     db = SessionLocal()
     
     try:
+        ensure_service_catalog(db)
+        services_by_name = {
+            service.name: service.id
+            for service in db.query(Service).filter(Service.is_active == True).all()
+        }
+
         # Verifică dacă există deja date
         existing_count = db.query(SupplierTemplate).count()
         if existing_count > 0:
@@ -440,10 +448,10 @@ def seed_suppliers():
                 "email": "events@belvedere.md",
                 "rating": 4.9,
                 "prices": [
-                    {"event_type": "wedding", "base_price": 450, "price_type": "PER_PERSON"},
-                    {"event_type": "birthday", "base_price": 350, "price_type": "PER_PERSON"},
-                    {"event_type": "corporate", "base_price": 500, "price_type": "PER_PERSON"},
-                    {"event_type": "default", "base_price": 400, "price_type": "PER_PERSON"},
+                    {"event_type": "wedding", "base_price": 450, "price_type": "PER_INVITAT"},
+                    {"event_type": "birthday", "base_price": 350, "price_type": "PER_INVITAT"},
+                    {"event_type": "corporate", "base_price": 500, "price_type": "PER_INVITAT"},
+                    {"event_type": "default", "base_price": 400, "price_type": "PER_INVITAT"},
                 ]
             },
             {
@@ -454,10 +462,10 @@ def seed_suppliers():
                 "email": "info@nobil.md",
                 "rating": 4.7,
                 "prices": [
-                    {"event_type": "wedding", "base_price": 520, "price_type": "PER_PERSON"},
-                    {"event_type": "birthday", "base_price": 420, "price_type": "PER_PERSON"},
-                    {"event_type": "corporate", "base_price": 580, "price_type": "PER_PERSON"},
-                    {"event_type": "default", "base_price": 480, "price_type": "PER_PERSON"},
+                    {"event_type": "wedding", "base_price": 520, "price_type": "PER_INVITAT"},
+                    {"event_type": "birthday", "base_price": 420, "price_type": "PER_INVITAT"},
+                    {"event_type": "corporate", "base_price": 580, "price_type": "PER_INVITAT"},
+                    {"event_type": "default", "base_price": 480, "price_type": "PER_INVITAT"},
                 ]
             },
             {
@@ -468,10 +476,10 @@ def seed_suppliers():
                 "email": "contact@vilaroz.md",
                 "rating": 4.4,
                 "prices": [
-                    {"event_type": "wedding", "base_price": 380, "price_type": "PER_PERSON"},
-                    {"event_type": "birthday", "base_price": 300, "price_type": "PER_PERSON"},
-                    {"event_type": "corporate", "base_price": 420, "price_type": "PER_PERSON"},
-                    {"event_type": "default", "base_price": 350, "price_type": "PER_PERSON"},
+                    {"event_type": "wedding", "base_price": 380, "price_type": "PER_INVITAT"},
+                    {"event_type": "birthday", "base_price": 300, "price_type": "PER_INVITAT"},
+                    {"event_type": "corporate", "base_price": 420, "price_type": "PER_INVITAT"},
+                    {"event_type": "default", "base_price": 350, "price_type": "PER_INVITAT"},
                 ]
             },
             {
@@ -482,10 +490,10 @@ def seed_suppliers():
                 "email": "contact@poseidon.md",
                 "rating": 5.0,
                 "prices": [
-                    {"event_type": "wedding", "base_price": 1000, "price_type": "PER_PERSON"},
-                    {"event_type": "birthday", "base_price": 1000, "price_type": "PER_PERSON"},
-                    {"event_type": "corporate", "base_price": 1000, "price_type": "PER_PERSON"},
-                    {"event_type": "default", "base_price": 1000, "price_type": "PER_PERSON"},
+                    {"event_type": "wedding", "base_price": 1000, "price_type": "PER_INVITAT"},
+                    {"event_type": "birthday", "base_price": 1000, "price_type": "PER_INVITAT"},
+                    {"event_type": "corporate", "base_price": 1000, "price_type": "PER_INVITAT"},
+                    {"event_type": "default", "base_price": 1000, "price_type": "PER_INVITAT"},
                 ]
             },
             
@@ -631,6 +639,7 @@ def seed_suppliers():
             supplier = SupplierTemplate(
                 name=supplier_data["name"],
                 service_type=supplier_data["service_type"],
+                service_id=services_by_name.get(supplier_data["service_type"]),
                 description=supplier_data["description"],
                 phone=supplier_data["phone"],
                 email=supplier_data["email"],

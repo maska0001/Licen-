@@ -5,12 +5,20 @@ from app.routers import auth, events, guests, suppliers, budget, tables, checkli
 from app.database.session import engine, Base
 from app import models
 from app.core.config import settings
+from app.services.budget_service import ensure_budget_columns
 from app.services.service_catalog import ensure_service_catalog
+from app.services.service_relations import (
+    ensure_service_relation_columns,
+    sync_service_relations,
+)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 with Session(bind=engine) as db:
+    ensure_service_relation_columns(db)
+    ensure_budget_columns(db)
     ensure_service_catalog(db)
+    sync_service_relations(db)
 
 app = FastAPI(
     title="Event Management API",

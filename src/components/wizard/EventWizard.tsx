@@ -34,6 +34,7 @@ import {
   supplierService,
   type SupplierTemplateOption,
   type ServiceCategoryOption,
+  type ServiceOption,
 } from "../../services/supplierService";
 import { mapEventFromApi } from "../../utils/mapEventFromApi";
 
@@ -126,6 +127,7 @@ export function EventWizard() {
   const [serviceCategories, setServiceCategories] = useState<
     ServiceCategoryOption[]
   >([]);
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [serviceCategoriesLoading, setServiceCategoriesLoading] =
     useState(false);
   const [venuesLoading, setVenuesLoading] = useState(false);
@@ -413,13 +415,18 @@ export function EventWizard() {
     const loadServiceCategories = async () => {
       setServiceCategoriesLoading(true);
       try {
-        const categories = await supplierService.getServiceCategories();
+        const [categories, services] = await Promise.all([
+          supplierService.getServiceCategories(),
+          supplierService.getServices(),
+        ]);
         if (!cancelled) {
           setServiceCategories(categories);
+          setServiceOptions(services);
         }
       } catch (err) {
         if (!cancelled) {
           setServiceCategories([]);
+          setServiceOptions([]);
         }
       } finally {
         if (!cancelled) {
@@ -587,12 +594,20 @@ export function EventWizard() {
       });
     } else if (currentStep === 6) {
       // Step 6: Servicii dorite
+      const selectedServiceIds = formData.services
+        .map(
+          (serviceName) =>
+            serviceOptions.find((service) => service.name === serviceName)?.id
+        )
+        .filter((serviceId): serviceId is number => typeof serviceId === "number");
+
       await wizardService.updateStep6(eventId, {
         package_id:
           selectedPackage === "manual"
             ? undefined
             : selectedPackage || undefined,
         services: formData.services,
+        service_ids: selectedServiceIds,
       });
     } else if (currentStep === 7) {
       // Step 7: Buget estimat (opțional)
@@ -1859,7 +1874,7 @@ export function EventWizard() {
                                 formData.guestRange
                               );
                               const isPerPerson =
-                                item.pricing_model === "PER_PERSON" ||
+                                item.pricing_model === "PER_INVITAT" ||
                                 item.pricing_model === "PER_INVITAT";
                               const priceBreakdown =
                                 isPerPerson && item.base_price_per_unit

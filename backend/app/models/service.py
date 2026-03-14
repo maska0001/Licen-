@@ -22,3 +22,5 @@ class Service(Base):
     )
 
     category = relationship("ServiceCategory", back_populates="services")
+    supplier_templates = relationship("SupplierTemplate", back_populates="service")
+    suppliers = relationship("Supplier", back_populates="service")

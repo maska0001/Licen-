@@ -247,7 +247,7 @@ export interface FrontendSupplier {
   name: string;
   category: string;
   price: number;
-  priceType: 'FIX_EVENT' | 'PER_INVITAT' | 'PER_ORA' | 'PER_UNITATE' | 'PACHET' | 'ESTIMATIV';
+  priceType: 'FIX_EVENT' | 'PER_INVITAT';
   unitLabel?: string;
   minUnits?: number;
   rating: number;

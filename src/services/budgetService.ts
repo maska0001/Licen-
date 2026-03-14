@@ -11,6 +11,8 @@ export interface BudgetItem {
   estimated_cost: number;
   actual_cost: number;
   payment_status: PaymentStatus;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface BudgetItemCreate {

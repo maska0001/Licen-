@@ -19,7 +19,12 @@ def get_budget_items(
     current_user: User = Depends(get_current_user)
 ):
     verify_event_ownership(db, event_id, current_user)
-    budget_items = db.query(BudgetItem).filter(BudgetItem.event_id == event_id).all()
+    budget_items = (
+        db.query(BudgetItem)
+        .filter(BudgetItem.event_id == event_id)
+        .order_by(BudgetItem.updated_at.desc(), BudgetItem.id.desc())
+        .all()
+    )
     return budget_items
 
 

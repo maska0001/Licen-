@@ -1,52 +1,136 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useAppContext } from "../../App";
 import {
   Star,
   Phone,
   Check,
   X,
-  RefreshCw,
   MapPin,
   Edit2,
   MoreVertical,
-  Heart,
   Plus,
+  ChevronDown,
 } from "lucide-react";
 import {
   calculateSupplierPrice,
-  formatPriceDisplay,
-  formatEstimatedTotal,
 } from "../../utils/pricing";
 import {
   SUPPLIER_CATEGORIES,
   getSupplierGroup,
   getSupplierLabel,
 } from "../../data/categories";
-import { supplierService } from "../../services/supplierService";
+import {
+  supplierService,
+  type ServiceOption,
+  type Supplier as ApiSupplier,
+  type SupplierTemplateOption,
+} from "../../services/supplierService";
+
+type EditablePriceType = "FIX_EVENT" | "PER_INVITAT";
+
+type SupplierView = {
+  id: string;
+  event_id?: number;
+  name: string;
+  category: string;
+  service_id?: number | null;
+  service_name?: string | null;
+  service_group?: string | null;
+  contact?: string;
+  location?: string;
+  price: number;
+  priceType: string;
+  original_price?: number | null;
+  original_price_type?: string | null;
+  is_price_modified?: boolean;
+  rating: number;
+  selected: boolean;
+  isCustom: boolean;
+};
+
+const INPUT_CLASS_NAME =
+  "w-full appearance-none px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none bg-white text-[#101828]";
+
+function normalizeEditablePriceType(priceType?: string | null): EditablePriceType {
+  return priceType === "PER_INVITAT"
+    ? "PER_INVITAT"
+    : "FIX_EVENT";
+}
+
+function normalizeSupplier(
+  supplier: ApiSupplier | SupplierTemplateOption,
+): SupplierView {
+  const priceType =
+    "price_type" in supplier
+      ? supplier.price_type
+      : supplier.priceType;
+
+  const isCustom =
+    "is_custom" in supplier ? supplier.is_custom : supplier.isCustom;
+
+  return {
+    id: String(supplier.id),
+    event_id: "event_id" in supplier ? supplier.event_id : undefined,
+    name: supplier.name,
+    category: supplier.category,
+    service_id: supplier.service_id,
+    service_name: supplier.service_name,
+    service_group: supplier.service_group,
+    contact: supplier.contact,
+    location: supplier.location,
+    price: supplier.price,
+    priceType,
+    original_price:
+      "original_price" in supplier ? supplier.original_price : supplier.price,
+    original_price_type:
+      "original_price_type" in supplier
+        ? supplier.original_price_type
+        : priceType,
+    is_price_modified:
+      "is_price_modified" in supplier ? supplier.is_price_modified : false,
+    rating: supplier.rating,
+    selected: supplier.selected,
+    isCustom,
+  };
+}
+
+function getSupplierPriceBreakdown(
+  supplier: SupplierView,
+  guestCount: number,
+): string {
+  const unitPrice = supplier.price;
+  const normalizedPriceType = normalizeEditablePriceType(supplier.priceType);
+
+  if (normalizedPriceType === "PER_INVITAT") {
+    return `${unitPrice.toLocaleString()} MDL × ${guestCount} invitați`;
+  }
+
+  return "Preț fix eveniment";
+}
 
 export function Suppliers() {
   const { activeEventId, event } = useAppContext();
-  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierView[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("Toate");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [customPrice, setCustomPrice] = useState<number>(0);
-  const [customPriceType, setCustomPriceType] = useState<
-    "FIX_EVENT" | "PER_HOUR" | "PER_PERSON"
-  >("FIX_EVENT");
+  const [customPriceType, setCustomPriceType] =
+    useState<EditablePriceType>("FIX_EVENT");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [newSupplier, setNewSupplier] = useState({
     name: "",
-    category: "🎤 Entertainment & atmosferă",
+    category: "",
+    serviceId: 0,
     contact: "",
     location: "Chișinău",
     price: 0,
-    priceType: "FIX_EVENT" as const,
+    priceType: "FIX_EVENT" as EditablePriceType,
     rating: 0,
   });
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
 
   // Load suppliers from backend
   useEffect(() => {
@@ -63,16 +147,18 @@ export function Suppliers() {
         console.log('DEBUG SUPPLIERS: Loading data for event', activeEventId);
         
         // Load both supplier templates and selected suppliers
-        const [templatesData, selectedSuppliersData] = await Promise.all([
+        const [templatesData, selectedSuppliersData, _servicesData, serviceOptionsData] = await Promise.all([
           supplierService.getSupplierTemplates(),
-          supplierService.getSuppliers(parseInt(activeEventId))
+          supplierService.getSuppliers(parseInt(activeEventId)),
+          supplierService.getServiceCategories(),
+          supplierService.getServices(),
         ]);
         
         console.log('DEBUG SUPPLIERS: Loaded templates:', templatesData?.length || 0);
         console.log('DEBUG SUPPLIERS: Loaded selected suppliers:', selectedSuppliersData?.length || 0);
         
         // Start with templates
-        const allSuppliers = [...(templatesData || [])];
+        const allSuppliers = (templatesData || []).map(normalizeSupplier);
         
         // Add selected suppliers (they override templates)
         for (const selectedSupplier of selectedSuppliersData || []) {
@@ -83,13 +169,13 @@ export function Suppliers() {
           if (templateIndex >= 0) {
             // Replace template with selected supplier
             allSuppliers[templateIndex] = {
-              ...selectedSupplier,
+              ...normalizeSupplier(selectedSupplier),
               selected: true
             };
           } else {
             // Add custom supplier
             allSuppliers.push({
-              ...selectedSupplier,
+              ...normalizeSupplier(selectedSupplier),
               selected: true
             });
           }
@@ -97,9 +183,11 @@ export function Suppliers() {
         
         console.log('DEBUG SUPPLIERS: Final suppliers list:', allSuppliers.length);
         setSuppliers(allSuppliers);
+        setServiceOptions(serviceOptionsData || []);
       } catch (error) {
         console.error("Failed to load suppliers:", error);
         setSuppliers([]);
+        setServiceOptions([]);
       } finally {
         setLoading(false);
       }
@@ -151,10 +239,11 @@ export function Suppliers() {
           {
             name: supplier.name,
             category: supplier.category,
+            service_id: supplier.service_id || undefined,
             contact: supplier.contact || undefined,
             location: supplier.location || undefined,
             price: supplier.price,
-            price_type: supplier.priceType,
+            price_type: normalizeEditablePriceType(supplier.priceType),
             rating: supplier.rating,
             selected: true,
             is_custom: false,
@@ -167,7 +256,7 @@ export function Suppliers() {
         setSuppliers(
           suppliers.map((s) =>
             s.id.toString() === supplierId 
-              ? { ...createdSupplier, selected: true }
+              ? { ...normalizeSupplier(createdSupplier), selected: true }
               : s
           )
         );
@@ -204,26 +293,28 @@ export function Suppliers() {
       // Create supplier in backend
       const createdSupplier = await supplierService.createSupplier(
         parseInt(activeEventId),
-        {
-          name: newSupplier.name,
-          category: newSupplier.category,
-          contact: newSupplier.contact,
-          location: newSupplier.location,
-          price: newSupplier.price,
-          price_type: newSupplier.priceType,
-          rating: newSupplier.rating,
-          selected: true,
-          is_custom: true,
+          {
+            name: newSupplier.name,
+            category: newSupplier.category,
+            service_id: newSupplier.serviceId || undefined,
+            contact: newSupplier.contact,
+            location: newSupplier.location,
+            price: newSupplier.price,
+            price_type: normalizeEditablePriceType(newSupplier.priceType),
+            rating: newSupplier.rating,
+            selected: true,
+            is_custom: true,
         }
       );
 
       // Add to local state
-      setSuppliers([...suppliers, createdSupplier]);
+      setSuppliers([...suppliers, normalizeSupplier(createdSupplier)]);
 
       // Reset form and close modal
       setNewSupplier({
         name: "",
-        category: "🎤 Entertainment & atmosferă",
+        category: "",
+        serviceId: 0,
         contact: "",
         location: "Chișinău",
         price: 0,
@@ -243,11 +334,12 @@ export function Suppliers() {
 
     setNewSupplier({
       name: supplier.name,
-      category: supplier.category,
+      category: supplier.service_name || supplier.category,
+      serviceId: supplier.service_id || 0,
       contact: supplier.contact,
       location: supplier.location || "Chișinău",
       price: supplier.price,
-      priceType: supplier.priceType,
+      priceType: normalizeEditablePriceType(supplier.priceType),
       rating: supplier.rating,
     });
     setEditingSupplier(supplierId);
@@ -266,13 +358,14 @@ export function Suppliers() {
 
     try {
       // Update supplier in backend
-      await supplierService.updateSupplier(parseInt(editingSupplier), {
+      const updatedSupplier = await supplierService.updateSupplier(parseInt(editingSupplier), {
         name: newSupplier.name,
         category: newSupplier.category,
+        service_id: newSupplier.serviceId || undefined,
         contact: newSupplier.contact,
         location: newSupplier.location,
         price: newSupplier.price,
-        price_type: newSupplier.priceType,
+        price_type: normalizeEditablePriceType(newSupplier.priceType),
         rating: newSupplier.rating,
       });
 
@@ -280,16 +373,7 @@ export function Suppliers() {
       setSuppliers(
         suppliers.map((s) => {
           if (s.id.toString() === editingSupplier) {
-            return {
-              ...s,
-              name: newSupplier.name,
-              category: newSupplier.category,
-              contact: newSupplier.contact,
-              location: newSupplier.location,
-              price: newSupplier.price,
-              price_type: newSupplier.priceType,
-              rating: newSupplier.rating,
-            };
+            return normalizeSupplier(updatedSupplier);
           }
           return s;
         })
@@ -299,7 +383,8 @@ export function Suppliers() {
 
       setNewSupplier({
         name: "",
-        category: "🎤 Entertainment & atmosferă",
+        category: "",
+        serviceId: 0,
         contact: "",
         location: "Chișinău",
         price: 0,
@@ -317,10 +402,10 @@ export function Suppliers() {
     const supplier = suppliers.find((s) => s.id === supplierId);
     if (!supplier || !event) return;
 
-    const unitPrice = supplier.customPrice || supplier.price;
+    const unitPrice = supplier.price;
 
     setCustomPrice(unitPrice);
-    setCustomPriceType(supplier.priceType);
+    setCustomPriceType(normalizeEditablePriceType(supplier.priceType));
     setEditingPrice(supplierId);
   };
 
@@ -332,20 +417,16 @@ export function Suppliers() {
 
     try {
       // Update supplier price in backend
-      await supplierService.updateSupplier(parseInt(editingPrice), {
+      const updatedSupplier = await supplierService.updateSupplier(parseInt(editingPrice), {
         price: customPrice,
+        price_type: customPriceType,
       });
 
       // Update local state
       setSuppliers(
         suppliers.map((s) => {
           if (s.id.toString() === editingPrice) {
-            return {
-              ...s,
-              price: customPrice,
-              priceType: customPriceType,
-              customPrice: customPrice,
-            };
+            return normalizeSupplier(updatedSupplier);
           }
           return s;
         })
@@ -397,7 +478,10 @@ export function Suppliers() {
                   eventType: event?.type || "Nuntă",
                 };
                 const totalPrice = calculateSupplierPrice(supplier, pricingContext);
-                const unitPrice = supplier.customPrice || supplier.price;
+                const priceBreakdown = getSupplierPriceBreakdown(
+                  supplier,
+                  event?.guestCount || 0,
+                );
 
                 return (
                   <div
@@ -501,15 +585,14 @@ export function Suppliers() {
                           <p className="font-semibold text-[14px] leading-[20px] text-[#960010] tracking-[-0.1504px]">
                             {totalPrice.toLocaleString()} MDL
                           </p>
-                          {supplier.customPrice && (
+                          {supplier.is_price_modified && (
                             <span className="bg-white border border-[#960010] text-[#960010] text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase">
                               MODIFICAT
                             </span>
                           )}
                         </div>
                         <p className="font-normal text-[12px] leading-[16px] text-[#6a7282] mt-[4px]">
-                          {unitPrice.toLocaleString()} MDL{" "}
-                          {formatPriceDisplay(supplier)}
+                          {priceBreakdown}
                         </p>
                       </div>
                     </div>
@@ -573,8 +656,11 @@ export function Suppliers() {
             eventType: event?.type || "Nuntă",
           };
           const totalPrice = calculateSupplierPrice(supplier, pricingContext);
-          const unitPrice = supplier.customPrice || supplier.price;
           const isSelected = supplier.selected;
+          const priceBreakdown = getSupplierPriceBreakdown(
+            supplier,
+            event?.guestCount || 0,
+          );
 
           return (
             <div
@@ -643,7 +729,7 @@ export function Suppliers() {
               <div className="pt-[17px] border-t border-[#e5e7eb] flex items-center justify-between">
                 <div>
                   <p className="font-normal text-[14px] leading-[20px] text-[#4a5565] tracking-[-0.1504px]">
-                    {formatPriceDisplay(supplier)}
+                    {priceBreakdown}
                   </p>
                 </div>
                 <div
@@ -718,21 +804,29 @@ export function Suppliers() {
                 <label className="block text-sm text-gray-600 mb-2">
                   Categorie *
                 </label>
+                <div className="relative">
                 <select
                   value={newSupplier.category}
                   onChange={(e) =>
-                    setNewSupplier({ ...newSupplier, category: e.target.value })
+                    setNewSupplier({
+                      ...newSupplier,
+                      category: e.target.value,
+                      serviceId:
+                        serviceOptions.find((service) => service.name === e.target.value)
+                          ?.id || 0,
+                    })
                   }
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
+                  className={INPUT_CLASS_NAME}
                 >
-                  {categories
-                    .filter((c) => c !== "Toate")
-                    .map((category) => (
-                      <option key={category} value={category}>
-                        {category}
+                  <option value="">Selectează serviciul</option>
+                  {serviceOptions.map((service) => (
+                      <option key={service.name} value={service.name}>
+                        {service.name}
                       </option>
                     ))}
                 </select>
+                <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
 
               <div>
@@ -779,7 +873,7 @@ export function Suppliers() {
                     })
                   }
                   placeholder="Ex: 5000"
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
+                  className={INPUT_CLASS_NAME}
                 />
               </div>
 
@@ -787,20 +881,22 @@ export function Suppliers() {
                 <label className="block text-sm text-gray-600 mb-2">
                   Tip preț *
                 </label>
+                <div className="relative">
                 <select
                   value={newSupplier.priceType}
                   onChange={(e) =>
                     setNewSupplier({
                       ...newSupplier,
-                      priceType: e.target.value as "FIX_EVENT",
+                      priceType: normalizeEditablePriceType(e.target.value),
                     })
                   }
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
+                  className={INPUT_CLASS_NAME}
                 >
                   <option value="FIX_EVENT">Fix per eveniment</option>
-                  <option value="PER_HOUR">Per oră</option>
-                  <option value="PER_PERSON">Per persoană</option>
+                  <option value="PER_INVITAT">Per invitat</option>
                 </select>
+                <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
             </div>
 
@@ -809,6 +905,7 @@ export function Suppliers() {
                 onClick={addCustomSupplier}
                 disabled={
                   !newSupplier.name ||
+                  !newSupplier.category ||
                   !newSupplier.contact ||
                   newSupplier.price <= 0
                 }
@@ -854,21 +951,29 @@ export function Suppliers() {
                 <label className="block text-sm text-gray-600 mb-2">
                   Categorie *
                 </label>
+                <div className="relative">
                 <select
                   value={newSupplier.category}
                   onChange={(e) =>
-                    setNewSupplier({ ...newSupplier, category: e.target.value })
+                    setNewSupplier({
+                      ...newSupplier,
+                      category: e.target.value,
+                      serviceId:
+                        serviceOptions.find((service) => service.name === e.target.value)
+                          ?.id || 0,
+                    })
                   }
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
+                  className={INPUT_CLASS_NAME}
                 >
-                  {categories
-                    .filter((c) => c !== "Toate")
-                    .map((category) => (
-                      <option key={category} value={category}>
-                        {category}
+                  <option value="">Selectează serviciul</option>
+                  {serviceOptions.map((service) => (
+                      <option key={service.name} value={service.name}>
+                        {service.name}
                       </option>
                     ))}
                 </select>
+                <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
 
               <div>
@@ -920,20 +1025,22 @@ export function Suppliers() {
                 <label className="block text-sm text-gray-600 mb-2">
                   Tip preț *
                 </label>
+                <div className="relative">
                 <select
                   value={newSupplier.priceType}
                   onChange={(e) =>
                     setNewSupplier({
                       ...newSupplier,
-                      priceType: e.target.value as "FIX_EVENT",
+                      priceType: normalizeEditablePriceType(e.target.value),
                     })
                   }
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
+                  className={INPUT_CLASS_NAME}
                 >
                   <option value="FIX_EVENT">Fix per eveniment</option>
-                  <option value="PER_HOUR">Per oră</option>
-                  <option value="PER_PERSON">Per persoană</option>
+                  <option value="PER_INVITAT">Per invitat</option>
                 </select>
+                <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
 
               <div>
@@ -962,6 +1069,7 @@ export function Suppliers() {
                 onClick={saveEditedSupplier}
                 disabled={
                   !newSupplier.name ||
+                  !newSupplier.category ||
                   !newSupplier.contact ||
                   newSupplier.price <= 0
                 }
@@ -985,7 +1093,7 @@ export function Suppliers() {
         (() => {
           const supplier = suppliers.find((s) => s.id === editingPrice);
           const previewTotal =
-            event && customPrice > 0
+            event && supplier && customPrice > 0
               ? calculateSupplierPrice(
                   {
                     ...supplier,
@@ -993,9 +1101,9 @@ export function Suppliers() {
                     priceType: customPriceType,
                   },
                   {
-                    guestCount: event.guest_count || 0,
+                    guestCount: event.guestCount || 0,
                     durationHours: 4,
-                    eventType: event.event_type || "Nuntă",
+                    eventType: event.type || "Nuntă",
                   }
                 )
               : 0;
@@ -1053,17 +1161,21 @@ export function Suppliers() {
                         <label className="block text-sm text-gray-700 mb-2">
                           Tip preț *
                         </label>
+                        <div className="relative">
                         <select
                           value={customPriceType}
                           onChange={(e) =>
-                            setCustomPriceType(e.target.value as "FIX_EVENT")
+                            setCustomPriceType(
+                              normalizeEditablePriceType(e.target.value),
+                            )
                           }
-                          className="w-full px-4 py-2 border border-gray-300 focus:border-[#960010] focus:outline-none"
+                          className={INPUT_CLASS_NAME}
                         >
                           <option value="FIX_EVENT">Fix per eveniment</option>
-                          <option value="PER_HOUR">Per oră</option>
-                          <option value="PER_PERSON">Per persoană</option>
+                          <option value="PER_INVITAT">Per invitat</option>
                         </select>
+                        <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
                       </div>
 
                       {customPrice > 0 && event && (
@@ -1075,14 +1187,12 @@ export function Suppliers() {
                             {previewTotal.toLocaleString()} MDL
                           </p>
                           <p className="text-xs text-gray-500 mt-2">
-                            {customPriceType === "PER_PERSON" &&
+                            {customPriceType === "PER_INVITAT" &&
                               `${customPrice.toLocaleString()} MDL × ${
-                                event.guest_count || 0
+                                event.guestCount || 0
                               } invitați`}
-                            {customPriceType === "PER_HOUR" &&
-                              `${customPrice.toLocaleString()} MDL × 4 ore`}
                             {customPriceType === "FIX_EVENT" &&
-                              `Preț fix pentru eveniment`}
+                              `Preț fix eveniment`}
                           </p>
                         </div>
                       )}

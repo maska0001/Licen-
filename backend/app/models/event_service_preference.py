@@ -10,9 +10,10 @@ class EventServicePreference(Base):
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     service_type = Column(String, nullable=False)
+    service_id = Column(Integer, ForeignKey("services.id", ondelete="SET NULL"), nullable=True, index=True)
     priority = Column(Integer, default=0)
     is_required = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     event = relationship("Event", back_populates="service_preferences")
-
+    service = relationship("Service")

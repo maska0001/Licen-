@@ -1,5 +1,4 @@
 // Package Builder - Crează pachete personalizate pentru evenimente
-import { defaultSuppliers } from '../data/suppliers';
 import { calculateSupplierPrice } from './pricing';
 
 interface Supplier {
@@ -7,7 +6,7 @@ interface Supplier {
   name: string;
   category: string;
   price: number;
-  priceType: 'FIX_EVENT' | 'PER_INVITAT' | 'PER_ORA' | 'PER_UNITATE' | 'PACHET' | 'ESTIMATIV';
+  priceType: 'FIX_EVENT' | 'PER_INVITAT';
   unitLabel?: string;
   minUnits?: number;
   rating: number;
@@ -117,8 +116,8 @@ const SERVICE_CATEGORY_MAP: { [key: string]: string } = {
 function findSuppliersForService(service: string): Supplier[] {
   const category = SERVICE_CATEGORY_MAP[service];
   if (!category) return [];
-  
-  return defaultSuppliers.filter(s => s.category === category);
+
+  return [];
 }
 
 // Creează pachete personalizate
@@ -170,21 +169,11 @@ export function buildPackages(
           case 'PER_INVITAT':
             priceBreakdown = `${supplier.price} MDL × ${guestCount} invitați`;
             break;
-          case 'PER_ORA':
-            const hours = supplier.minUnits || 4;
-            priceBreakdown = `${supplier.price} MDL × ${hours} ore`;
-            break;
           case 'FIX_EVENT':
             priceBreakdown = 'Preț fix eveniment';
             break;
-          case 'PACHET':
-            priceBreakdown = 'Pachet complet';
-            break;
-          case 'ESTIMATIV':
-            priceBreakdown = 'Preț estimativ';
-            break;
           default:
-            priceBreakdown = 'Preț standard';
+            priceBreakdown = 'Preț fix eveniment';
         }
         
         return {

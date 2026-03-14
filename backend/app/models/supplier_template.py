@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.session import Base
@@ -10,6 +10,7 @@ class SupplierTemplate(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     service_type = Column(String, nullable=False)
+    service_id = Column(Integer, ForeignKey("services.id", ondelete="SET NULL"), nullable=True, index=True)
     description = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
@@ -20,4 +21,4 @@ class SupplierTemplate(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     pricing = relationship("SupplierTemplatePricing", back_populates="template", cascade="all, delete-orphan")
-
+    service = relationship("Service", back_populates="supplier_templates")

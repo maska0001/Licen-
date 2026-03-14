@@ -162,7 +162,7 @@ export function Dashboard() {
       // Update local state
       setEvent(updatedEvent);
 
-      // If guest count changed, recalculate prices for suppliers with PER_PERSON pricing
+      // If guest count changed, recalculate prices for suppliers with PER_INVITAT pricing
       if (oldGuestCount !== newGuestCount) {
         // Reload budget items to get updated prices
         // Note: The backend should handle price recalculation
@@ -720,7 +720,7 @@ export function Dashboard() {
                   editData.guestCount > 0 && (
                     <p className="text-xs text-[#960010] mt-2">
                       ⚠️ Modificarea numărului de invitați va actualiza automat
-                      prețurile furnizorilor care au tarif per persoană.
+                      prețurile furnizorilor care au tarif per invitat.
                     </p>
                   )}
               </div>
