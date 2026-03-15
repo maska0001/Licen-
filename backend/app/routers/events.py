@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
@@ -12,8 +13,42 @@ from app.models.guest import Guest, RsvpStatus
 from app.models.checklist import ChecklistItem
 from app.models.budget import BudgetItem, PaymentStatus
 from app.models.supplier import Supplier
+from app.services.supplier_service import sync_event_supplier_dependencies
 
 router = APIRouter(prefix="/events", tags=["Events"])
+
+
+def _parse_event_date(value):
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, date):
+        return value
+
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="Data evenimentului este invalidă.")
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    iso_match = normalized[:10]
+    if len(iso_match) == 10 and iso_match[4] == "-" and iso_match[7] == "-":
+        try:
+            return datetime.strptime(iso_match, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Data evenimentului este invalidă.",
+            ) from exc
+
+    for fmt in ("%d/%m/%Y", "%d.%m.%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(normalized, fmt).date()
+        except ValueError:
+            continue
+
+    raise HTTPException(status_code=422, detail="Data evenimentului este invalidă.")
 
 
 @router.get("", response_model=List[EventResponse])
@@ -56,10 +91,25 @@ def update_event(
     current_user: User = Depends(get_current_user)
 ):
     event = verify_event_ownership(db, event_id, current_user)
-    
-    for key, value in event_data.model_dump(exclude_unset=True).items():
+
+    payload = event_data.model_dump(exclude_unset=True)
+    guest_count_changed = (
+        "guest_count" in payload and payload["guest_count"] != event.guest_count
+    )
+    event_date_changed = "date" in payload
+
+    if "date" in payload:
+        payload["date"] = _parse_event_date(payload["date"])
+        event_date_changed = payload["date"] != event.date
+
+    for key, value in payload.items():
         setattr(event, key, value)
-    
+
+    db.flush()
+
+    if guest_count_changed or event_date_changed:
+        sync_event_supplier_dependencies(db, event)
+
     db.commit()
     db.refresh(event)
     return event

@@ -5,11 +5,16 @@ export interface Event {
   user_id: number;
   title: string;
   event_type?: string | null;
+  status: string;
   date: string | null;
   date_mode?: string | null;
   event_month?: number | null;
   event_year?: number | null;
   city: string | null;
+  venue_city?: string | null;
+  venue_name?: string | null;
+  venue_address?: string | null;
+  location_mode?: string | null;
   guest_count: number;
   budget_total_estimated?: number | null;
   has_budget?: boolean;
@@ -29,6 +34,7 @@ export interface EventUpdate {
   event_type?: string;
   date?: string;
   city?: string;
+  venue_city?: string;
   guest_count?: number;
 }
 

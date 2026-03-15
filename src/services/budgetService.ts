@@ -8,6 +8,9 @@ export interface BudgetItem {
   supplier_id?: number;
   category: string;
   name: string;
+  price_type?: 'FIX_EVENT' | 'PER_INVITAT';
+  unit_price?: number | null;
+  quantity?: number | null;
   estimated_cost: number;
   actual_cost: number;
   payment_status: PaymentStatus;
@@ -19,6 +22,9 @@ export interface BudgetItemCreate {
   name: string;
   category?: string;
   supplier_id?: number;
+  price_type?: 'FIX_EVENT' | 'PER_INVITAT';
+  unit_price?: number;
+  quantity?: number;
   estimated_cost?: number;
   actual_cost?: number;
   payment_status?: PaymentStatus;
@@ -28,6 +34,9 @@ export interface BudgetItemUpdate {
   name?: string;
   category?: string;
   supplier_id?: number;
+  price_type?: 'FIX_EVENT' | 'PER_INVITAT';
+  unit_price?: number;
+  quantity?: number;
   estimated_cost?: number;
   actual_cost?: number;
   payment_status?: PaymentStatus;

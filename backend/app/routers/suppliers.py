@@ -32,7 +32,7 @@ def _resolve_service(
 
 def _normalize_price_type(price_type: Optional[str]) -> str:
     normalized = (price_type or "FIX_EVENT").upper()
-    if normalized == "PER_INVITAT":
+    if normalized in {"PER_INVITAT", "PER_PERSON"}:
         return "PER_INVITAT"
     return "FIX_EVENT"
 
@@ -78,14 +78,22 @@ def get_service_categories(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    active_template_service_names = {
-        row[0]
-        for row in db.query(SupplierTemplate.service_type)
+    active_templates = (
+        db.query(SupplierTemplate)
         .filter(SupplierTemplate.is_active == True)
-        .distinct()
         .all()
-        if row[0]
+    )
+    active_template_service_ids = {
+        template.service_id for template in active_templates if template.service_id
     }
+    active_template_service_names = {
+        template.service.name
+        for template in active_templates
+        if template.service and template.service.name
+    }
+    active_template_service_names.update(
+        template.service_type for template in active_templates if template.service_type
+    )
 
     category_rows = (
         db.query(ServiceCategory)
@@ -103,7 +111,11 @@ def get_service_categories(
             for service in sorted(
                 category.services, key=lambda item: (item.sort_order, item.name)
             )
-            if service.is_active and service.name in active_template_service_names
+            if service.is_active
+            and (
+                service.id in active_template_service_ids
+                or service.name in active_template_service_names
+            )
         ]
         if available_services:
             categories.append({"name": category.name, "services": available_services})
@@ -162,7 +174,14 @@ def get_supplier_templates(
     """
     templates_query = db.query(SupplierTemplate).filter(SupplierTemplate.is_active == True)
     if service_type:
-        templates_query = templates_query.filter(SupplierTemplate.service_type == service_type)
+        service = get_service_by_name(db, service_type)
+        if service:
+            templates_query = templates_query.filter(
+                (SupplierTemplate.service_id == service.id)
+                | (SupplierTemplate.service_type == service_type)
+            )
+        else:
+            templates_query = templates_query.filter(SupplierTemplate.service_type == service_type)
 
     templates = templates_query.order_by(SupplierTemplate.name.asc()).all()
     
@@ -189,7 +208,11 @@ def get_supplier_templates(
             selected_pricing = pricing_query.first()
 
         price = selected_pricing.base_price if selected_pricing else 0
-        price_type = selected_pricing.pricing_model if selected_pricing else "FIX_EVENT"
+        price_type = (
+            _normalize_price_type(selected_pricing.pricing_model)
+            if selected_pricing
+            else "FIX_EVENT"
+        )
         
         result.append({
             "id": f"template_{template.id}",  # Prefix to distinguish from selected suppliers

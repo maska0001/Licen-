@@ -35,8 +35,71 @@ import { StatsCard } from "./StatsCard";
 import { calculateSupplierPrice } from "../../utils/pricing";
 import { formatEventDate } from "../../utils/eventDate";
 
+const normalizeDashboardDate = (value: string) => {
+  if (!value) {
+    return value;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const isoMatch = value.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoMatch) {
+    return isoMatch[1];
+  }
+
+  const match = value.match(/^(\d{2})[./-](\d{2})[./-](\d{4})$/);
+  if (match) {
+    const [, day, month, year] = match;
+    return `${year}-${month}-${day}`;
+  }
+
+  return value;
+};
+
+const formatApiErrorDetail = (detail: unknown) => {
+  if (!detail) {
+    return "Te rog încearcă din nou.";
+  }
+
+  if (typeof detail === "string") {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        if (item && typeof item === "object") {
+          const path = Array.isArray((item as any).loc)
+            ? (item as any).loc.join(".")
+            : "camp necunoscut";
+          const message = (item as any).msg || JSON.stringify(item);
+          return `${path}: ${message}`;
+        }
+        return String(item);
+      })
+      .join(" | ");
+  }
+
+  if (typeof detail === "object") {
+    return JSON.stringify(detail);
+  }
+
+  return String(detail);
+};
+
 export function Dashboard() {
-  const { setCurrentView, activeEventId } = useAppContext();
+  const {
+    setCurrentView,
+    activeEventId,
+    setEvent: setAppEvent,
+    setSuppliers: setAppSuppliers,
+    setBudgetItems: setAppBudgetItems,
+  } = useAppContext();
   const [event, setEvent] = useState<Event | null>(null);
   const [guests, setGuests] = useState<Guest[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -105,8 +168,23 @@ export function Dashboard() {
     loadAllData();
   }, [activeEventId]);
 
-  const confirmedGuests = guests.filter((g) => g.status === "confirmed").length;
-  const pendingGuests = guests.filter((g) => g.status === "pending").length;
+  const getGuestPeopleCount = (guest: Guest) =>
+    Math.max(0, (guest.adults || 0) + (guest.children || 0));
+  const totalInvitedPeople = guests.reduce(
+    (sum, guest) => sum + getGuestPeopleCount(guest),
+    0
+  );
+  const confirmedGuests = guests
+    .filter((g) => g.status === "confirmed")
+    .reduce((sum, guest) => sum + getGuestPeopleCount(guest), 0);
+  const pendingGuests = guests
+    .filter((g) => g.status === "pending")
+    .reduce((sum, guest) => sum + getGuestPeopleCount(guest), 0);
+  const dashboardLocation =
+    event?.venue_name ||
+    event?.venue_city ||
+    event?.city ||
+    (event?.location_mode === "unknown" ? "Nu este specificat" : "N/A");
 
   // Use budget_total_estimated from event (set during wizard or updated when budget items change)
   const totalBudget = event?.budget_total_estimated || 0;
@@ -122,14 +200,14 @@ export function Dashboard() {
   const taskProgress =
     checklist.length > 0 ? (completedTasks / checklist.length) * 100 : 0;
   const guestProgress =
-    guests.length > 0 ? (confirmedGuests / guests.length) * 100 : 0;
+    totalInvitedPeople > 0 ? (confirmedGuests / totalInvitedPeople) * 100 : 0;
 
   // Open edit modal with current event data
   const openEditModal = () => {
     setEditData({
       type: event?.event_type || "",
       eventName: event?.title || "",
-      city: event?.city || "",
+      city: event?.venue_city || event?.city || "",
       date: event?.date || "",
       guestCount: event?.guest_count || 0,
       customImage: "", // Custom image nu este în Event interface, poate fi adăugat mai târziu
@@ -139,7 +217,7 @@ export function Dashboard() {
 
   // Save edited event data and recalculate supplier prices
   const saveEventData = async () => {
-    if (!editData.type || !editData.date || editData.guestCount <= 0) {
+    if (!editData.date || editData.guestCount <= 0) {
       alert("Te rog completează toate câmpurile obligatorii!");
       return;
     }
@@ -150,31 +228,93 @@ export function Dashboard() {
     const newGuestCount = editData.guestCount;
 
     try {
-      // Update event using eventService
-      const updatedEvent = await eventService.updateEvent(event.id, {
-        title: editData.eventName,
-        event_type: editData.type,
-        date: editData.date,
-        city: editData.city,
+      const updatePayload: Parameters<typeof eventService.updateEvent>[1] = {
         guest_count: newGuestCount,
-      });
+      };
 
-      // Update local state
+      if (editData.eventName.trim() && editData.eventName.trim() !== (event.title || "")) {
+        updatePayload.title = editData.eventName.trim();
+      }
+
+      const normalizedDate = normalizeDashboardDate(editData.date);
+      if (normalizedDate && normalizedDate !== (event.date || "")) {
+        updatePayload.date = normalizedDate;
+      }
+
+      const normalizedCity = editData.city.trim();
+      const currentCity = event.venue_city || event.city || "";
+      if (normalizedCity && normalizedCity !== currentCity) {
+        updatePayload.city = normalizedCity;
+        updatePayload.venue_city = normalizedCity;
+      }
+
+      // Update event using eventService
+      const updatedEvent = await eventService.updateEvent(event.id, updatePayload);
+
+      // Update local dashboard state
       setEvent(updatedEvent);
+      setAppEvent({
+        id: updatedEvent.id.toString(),
+        type: updatedEvent.event_type || "",
+        eventName: updatedEvent.title || "",
+        status: updatedEvent.status || "planning",
+        date: updatedEvent.date || null,
+        dateMode: updatedEvent.date_mode ?? null,
+        eventMonth: updatedEvent.event_month ?? null,
+        eventYear: updatedEvent.event_year ?? null,
+        city: updatedEvent.venue_city || updatedEvent.city || "",
+        guestCount: updatedEvent.guest_count || 0,
+        vibe: "",
+        services: [],
+        budget: updatedEvent.budget_total_estimated || 0,
+      });
 
       // If guest count changed, recalculate prices for suppliers with PER_INVITAT pricing
       if (oldGuestCount !== newGuestCount) {
-        // Reload budget items to get updated prices
-        // Note: The backend should handle price recalculation
         const eventId = parseInt(activeEventId!);
-        const updatedBudgetItems = await budgetService.getBudgetItems(eventId);
+        const [updatedBudgetItems, updatedSuppliers] = await Promise.all([
+          budgetService.getBudgetItems(eventId),
+          supplierService.getSuppliers(eventId),
+        ]);
+
         setBudgetItems(updatedBudgetItems);
+        setAppBudgetItems(
+          updatedBudgetItems.map((item: any) => ({
+            id: item.id.toString(),
+            supplierId: item.supplier_id?.toString(),
+            category: item.category || "📋 General",
+            name: item.name,
+            estimatedPrice: item.estimated_cost || 0,
+            realPrice: item.actual_cost || 0,
+            paymentStatus: item.payment_status || "unpaid",
+            eventId: activeEventId,
+          }))
+        );
+        setSuppliers(updatedSuppliers);
+        setAppSuppliers(
+          updatedSuppliers.map((supplier: any) => ({
+            id: supplier.id.toString(),
+            name: supplier.name,
+            category: supplier.category,
+            price: supplier.price,
+            priceType: supplier.price_type || "FIX_EVENT",
+            rating: supplier.rating || 0,
+            contact: supplier.contact || "",
+            location: supplier.location || "",
+            selected: !!supplier.selected,
+            isCustom: !!supplier.is_custom,
+            eventId: activeEventId,
+          }))
+        );
       }
 
       setShowEditModal(false);
     } catch (error) {
       console.error("Failed to update event:", error);
-      alert("Eroare la actualizarea evenimentului. Te rog încearcă din nou.");
+      const detail = formatApiErrorDetail(
+        (error as any)?.response?.data?.detail || (error as any)?.message
+      );
+      alert(`Eroare la actualizarea evenimentului. ${detail}`);
     }
   };
 
@@ -335,7 +475,7 @@ export function Dashboard() {
                 {/* Top Right - Locație */}
                 <div className="flex flex-col gap-[8px] items-start px-[32px] py-[40px] border-b border-[#e7e7e7]">
                   <p className="font-medium leading-none not-italic text-[#960010] text-[44px] tracking-[-0.88px] uppercase w-full">
-                    {event.city || "N/A"}
+                    {dashboardLocation}
                   </p>
                   <p className="font-medium leading-[1.08] not-italic text-[20px] text-black tracking-[-0.2px] uppercase w-full">
                     LOCAȚIE
@@ -378,7 +518,7 @@ export function Dashboard() {
         <StatsCard
           onClick={() => setCurrentView("guests")}
           title="Lista de invitați"
-          mainValue={guests.length}
+          mainValue={totalInvitedPeople}
           progressLabel="Progres confirmări"
           progressPercent={guestProgress}
           bottomContent={
@@ -636,24 +776,12 @@ export function Dashboard() {
                 <label className="block text-sm text-gray-600 mb-2">
                   Tip eveniment *
                 </label>
-                <select
+                <input
+                  type="text"
                   value={editData.type}
-                  onChange={(e) =>
-                    setEditData({ ...editData, type: e.target.value })
-                  }
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
-                >
-                  <option value="">Selectează tipul</option>
-                  <option value="Nuntă">Nuntă</option>
-                  <option value="Zi de naștere">Zi de naștere</option>
-                  <option value="Botez">Botez</option>
-                  <option value="Aniversare">Aniversare</option>
-                  <option value="Eveniment corporate">
-                    Eveniment corporate
-                  </option>
-                  <option value="Baby shower">Baby shower</option>
-                  <option value="Altceva">Altceva</option>
-                </select>
+                  readOnly
+                  className="w-full px-6 py-3 border border-gray-200 rounded-full bg-gray-50 text-[#6a7282] focus:outline-none cursor-not-allowed"
+                />
               </div>
 
               <div>
@@ -773,7 +901,7 @@ export function Dashboard() {
               <button
                 onClick={saveEventData}
                 disabled={
-                  !editData.type || !editData.date || editData.guestCount <= 0
+                  !editData.date || editData.guestCount <= 0
                 }
                 className="flex-1 bg-[#960010] hover:bg-[#7a000d] text-white py-3 rounded-full transition-all disabled:bg-gray-300 disabled:cursor-not-allowed"
               >

@@ -3,117 +3,114 @@ import { useAppContext } from '../../App';
 import { ImagePlus, Type, Palette, Eye, Globe, Link as LinkIcon, Save, Trash2, Plus } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { eventService, Event } from '../../services/eventService';
+import { landingService } from '../../services/landingService';
+import { LandingMobileView, LandingRsvpFormData, LandingContent as SharedLandingContent } from './LandingMobileView';
+import { buildDefaultLandingContent, buildLandingContentFromApi } from '../../utils/landingContent';
 
-interface LandingContent {
-  published: boolean;
-  coverImage: string;
-  galleryImages: string[];
-  title: string;
-  subtitle: string;
-  date: string;
-  time: string;
-  location: string;
-  locationAddress: string;
-  message: string;
-  dressCode: string;
-  schedule: { time: string; activity: string }[];
-  timingIcons: string[]; // Pozele pentru pătratele din TIMING
-  colorPrimary: string;
-  colorSecondary: string;
-}
+type LandingContent = SharedLandingContent;
+
+const normalizeSlugInput = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 export function LandingBuilder() {
   const { activeEventId } = useAppContext();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadingLanding, setLoadingLanding] = useState(false);
+  const [landingSlug, setLandingSlug] = useState<string | null>(null);
+  const [slugInput, setSlugInput] = useState('');
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>('');
   
-  // Load event data from eventService
-  useEffect(() => {
-    const loadEventData = async () => {
-      if (!activeEventId) {
-        setEvent(null);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const eventData = await eventService.getEvent(parseInt(activeEventId));
-        setEvent(eventData);
-      } catch (error) {
-        console.error('Failed to load event data:', error);
-        setEvent(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadEventData();
-  }, [activeEventId]);
-  
-  const [content, setContent] = useState<LandingContent>(() => {
-    const saved = localStorage.getItem('landingContent');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return {
-          published: parsed.published || false,
-          coverImage: parsed.coverImage || '',
-          galleryImages: Array.isArray(parsed.galleryImages) ? parsed.galleryImages : [],
-          title: parsed.title || event?.event_type || 'Evenimentul nostru',
-          subtitle: parsed.subtitle || 'Vă invităm să sărbătorim împreună',
-          date: parsed.date || event?.date || '',
-          time: parsed.time || '18:00',
-          location: parsed.location || event?.city || '',
-          locationAddress: parsed.locationAddress || '',
-          message: parsed.message || 'Cu drag vă așteptăm să fiți alături de noi în această zi specială!',
-          dressCode: parsed.dressCode || 'Ținută elegantă',
-          schedule: Array.isArray(parsed.schedule) ? parsed.schedule : [
-            { time: '18:00', activity: 'Cocteil de bun venit' },
-            { time: '19:00', activity: 'Ceremonia' },
-            { time: '20:00', activity: 'Cină festivă' },
-            { time: '22:00', activity: 'Petrecere' }
-          ],
-          timingIcons: Array.isArray(parsed.timingIcons) ? parsed.timingIcons : [],
-          colorPrimary: parsed.colorPrimary || '#960010',
-          colorSecondary: parsed.colorSecondary || '#ec4899'
-        };
-      } catch (e) {
-        console.error('Error parsing landing content:', e);
-      }
-    }
-    
-    return {
-      published: false,
-      coverImage: '',
-      galleryImages: [],
-      title: event?.event_type || 'Evenimentul nostru',
-      subtitle: 'Vă invităm să sărbătorim împreună',
-      date: event?.date || '',
-      time: '18:00',
-      location: event?.city || '',
-      locationAddress: '',
-      message: 'Cu drag vă așteptăm să fiți alături de noi în această zi specială!',
-      dressCode: 'Ținută elegantă',
-      schedule: [
-        { time: '18:00', activity: 'Cocteil de bun venit' },
-        { time: '19:00', activity: 'Ceremonia' },
-        { time: '20:00', activity: 'Cină festivă' },
-        { time: '22:00', activity: 'Petrecere' }
-      ],
-      timingIcons: [],
-      colorPrimary: '#960010',
-      colorSecondary: '#ec4899'
-    };
+  const [content, setContent] = useState<LandingContent>(buildDefaultLandingContent(null));
+  const [previewResponseStatus, setPreviewResponseStatus] = useState<'confirmed' | 'declined'>('confirmed');
+  const [previewFormData, setPreviewFormData] = useState<LandingRsvpFormData>({
+    name: '',
+    phone: '',
+    adults: 1,
+    children: 0,
+    message: '',
   });
 
   const [activeTab, setActiveTab] = useState<'content' | 'design' | 'preview'>('content');
   const [showImageSearch, setShowImageSearch] = useState<'cover' | 'gallery' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const currentSnapshot = JSON.stringify({
+    content,
+    slugInput: normalizeSlugInput(slugInput),
+  });
+  const isDirty = !loading && !loadingLanding && currentSnapshot !== lastSavedSnapshot;
+
   useEffect(() => {
-    localStorage.setItem('landingContent', JSON.stringify(content));
-  }, [content]);
+    const loadLandingData = async () => {
+      if (!activeEventId) {
+        setEvent(null);
+        setContent(buildDefaultLandingContent(null));
+        setLandingSlug(null);
+        setLoading(false);
+        setLoadingLanding(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setLoadingLanding(true);
+        const eventId = parseInt(activeEventId, 10);
+        const [eventData, landingData] = await Promise.all([
+          eventService.getEvent(eventId),
+          landingService.getLandingPage(eventId),
+        ]);
+        setEvent(eventData);
+        setLandingSlug(landingData.public_slug || null);
+        setSlugInput(landingData.public_slug || '');
+
+        const nextContent = buildLandingContentFromApi(landingData, eventData);
+
+        setContent(nextContent);
+        setLastSavedSnapshot(
+          JSON.stringify({
+            content: nextContent,
+            slugInput: normalizeSlugInput(landingData.public_slug || ''),
+          })
+        );
+      } catch (error) {
+        console.error('Failed to load landing data:', error);
+        setEvent(null);
+        setContent(buildDefaultLandingContent(null));
+        setLandingSlug(null);
+        setSlugInput('');
+        setLastSavedSnapshot(
+          JSON.stringify({
+            content: buildDefaultLandingContent(null),
+            slugInput: '',
+          })
+        );
+      } finally {
+        setLoading(false);
+        setLoadingLanding(false);
+      }
+    };
+
+    loadLandingData();
+  }, [activeEventId]);
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const updateContent = (field: keyof LandingContent, value: any) => {
     setContent(prev => ({ ...prev, [field]: value }));
@@ -163,85 +160,152 @@ export function LandingBuilder() {
     setSearchQuery('');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check if this is for timing icon
-    const timingIconIndex = (window as any).__timingIconIndex;
-    if (typeof timingIconIndex === 'number') {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageUrl = event.target?.result as string;
-        updateTimingIcon(timingIconIndex, imageUrl);
-        (window as any).__timingIconIndex = undefined;
-        setShowImageSearch(null);
-      };
-      reader.readAsDataURL(file);
+    if (!activeEventId) {
+      alert('Selecteaza mai intai un eveniment pentru a putea incarca imagini.');
+      e.target.value = '';
       return;
     }
 
+    // Check if this is for timing icon
+    const timingIconIndex = (window as any).__timingIconIndex;
+
     if (!file.type.startsWith('image/')) {
       alert('Te rog încarcă doar imagini (JPG, PNG, etc.)');
+      e.target.value = '';
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
       alert('Imaginea este prea mare. Dimensiunea maximă este 5MB.');
+      e.target.value = '';
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      
+    try {
+      const eventId = parseInt(activeEventId, 10);
+      const { url } = await landingService.uploadImage(eventId, file);
+
+      if (typeof timingIconIndex === 'number') {
+        updateTimingIcon(timingIconIndex, url);
+        (window as any).__timingIconIndex = undefined;
+        setShowImageSearch(null);
+        e.target.value = '';
+        return;
+      }
+
       if (showImageSearch === 'cover') {
-        updateContent('coverImage', dataUrl);
+        updateContent('coverImage', url);
       } else if (showImageSearch === 'gallery') {
         const slot = (window as any).__imageSlot;
         if (slot !== undefined) {
           const newImages = [...content.galleryImages];
-          newImages[slot] = dataUrl;
+          newImages[slot] = url;
           updateContent('galleryImages', newImages);
         } else {
-          updateContent('galleryImages', [...content.galleryImages, dataUrl]);
+          updateContent('galleryImages', [...content.galleryImages, url]);
         }
       }
-      
+
       setShowImageSearch(null);
       setSearchQuery('');
-    };
-    
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Failed to upload landing image:', error);
+      alert('Nu am putut incarca imaginea.');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const removeGalleryImage = (index: number) => {
     updateContent('galleryImages', content.galleryImages.filter((_, i) => i !== index));
   };
 
-  const togglePublish = () => {
+  const saveLanding = async (nextPublished?: boolean) => {
+    if (!activeEventId) {
+      return false;
+    }
+
+    try {
+      setSaving(true);
+      const eventId = parseInt(activeEventId, 10);
+      const payload = {
+        title: content.title,
+        date: content.date,
+        location: content.location,
+        cover_image: content.coverImage,
+        message: content.heroMessage,
+        dress_code: content.dressCode,
+        public_slug: normalizeSlugInput(slugInput),
+        published: nextPublished ?? content.published,
+        content_json: JSON.stringify({
+          ...content,
+          published: nextPublished ?? content.published,
+        }),
+      };
+      const updatedLanding = await landingService.updateLandingPage(eventId, payload);
+      if ((nextPublished ?? content.published) && !content.published) {
+        await landingService.publishLandingPage(eventId);
+      }
+      const normalizedSlug = updatedLanding.public_slug || '';
+      const nextContentState = { ...content, published: nextPublished ?? content.published };
+      setLandingSlug(updatedLanding.public_slug || null);
+      setSlugInput(normalizedSlug);
+      setContent(nextContentState);
+      setLastSavedSnapshot(
+        JSON.stringify({
+          content: nextContentState,
+          slugInput: normalizeSlugInput(normalizedSlug),
+        })
+      );
+      return true;
+    } catch (error) {
+      console.error('Failed to save landing page:', error);
+      alert('Nu am putut salva modificarile landing-ului.');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const togglePublish = async () => {
     if (!content.published) {
       if (!content.coverImage) {
         alert('Te rog adaugă o imagine de copertă înainte de a publica!');
         return;
       }
       if (confirm('Ești sigur că vrei să publici landing-ul? Invitații vor putea accesa linkul.')) {
-        updateContent('published', true);
-        alert('✅ Landing publicat cu succes! Acum poți trimite linkurile invitaților.');
+        const saved = await saveLanding(true);
+        if (saved) {
+          alert('Landing publicat cu succes! Acum poti trimite linkurile invitatiilor.');
+        }
       }
     } else {
       if (confirm('Vrei să ascunzi landing-ul? Invitații nu vor mai putea accesa linkul.')) {
-        updateContent('published', false);
+        const saved = await saveLanding(false);
+        if (saved) {
+          alert('Landing ascuns cu succes.');
+        }
       }
     }
   };
 
   const getLandingUrl = () => {
-    return `${window.location.origin}${window.location.pathname}?landing=view`;
+    if (!landingSlug) {
+      return null;
+    }
+    return `${window.location.origin}/landing/${landingSlug}`;
   };
 
   const copyLink = () => {
     const link = getLandingUrl();
+    if (!link) {
+      alert('Salveaza landing-ul pentru a genera un link public real.');
+      return;
+    }
     
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(link)
@@ -284,7 +348,57 @@ export function LandingBuilder() {
         <p className="font-normal leading-[24px] text-[#4a5565] text-[16px] tracking-[-0.3125px]">
           Creează o invitație digitală elegantă pentru invitații tăi
         </p>
-        {content.published && (
+        <div className="mt-4 flex items-center gap-3">
+          <div
+            className={`inline-flex items-center rounded-full px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.08em] ${
+              isDirty
+                ? 'bg-[#fef2f2] text-[#960010] border border-[#fecaca]'
+                : 'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]'
+            }`}
+          >
+            {isDirty ? 'Modificări nesalvate' : 'Toate modificările sunt salvate'}
+          </div>
+        </div>
+        <div className="mt-4 max-w-xl">
+          <label className="block text-[14px] text-[#6b7280] tracking-[-0.1504px] mb-2">
+            Link public
+          </label>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 px-4 py-2.5 border border-[#d1d5db] rounded-lg bg-[#f9fafb] text-[14px] text-[#6b7280]">
+              {window.location.origin}/landing/
+              <input
+                type="text"
+                value={slugInput}
+                onChange={(e) => setSlugInput(normalizeSlugInput(e.target.value))}
+                placeholder="numele-linkului"
+                className="bg-transparent outline-none text-[#111827] w-[220px]"
+              />
+            </div>
+            {landingSlug && content.published && (
+              <button
+                onClick={copyLink}
+                className="px-4 py-2.5 bg-white border border-[#d1d5db] text-[#4b5563] rounded-lg hover:border-[#960010] hover:text-[#960010] transition-all flex items-center gap-2 shadow-sm"
+              >
+                <LinkIcon className="w-4 h-4" />
+                Copiaza
+              </button>
+            )}
+          </div>
+          <p className="mt-2 text-[12px] text-[#6b7280]">
+            Doar litere mici, cifre si cratime. Daca slugul exista deja, backendul il ajusteaza automat.
+          </p>
+          {!landingSlug && (
+            <p className="mt-2 text-[12px] text-[#960010]">
+              Linkul public apare dupa prima salvare.
+            </p>
+          )}
+        </div>
+        {loading && (
+          <p className="mt-4 text-[14px] text-[#6b7280]">
+            Se incarca configuratia landing-ului...
+          </p>
+        )}
+        {content.published && getLandingUrl() && (
           <div className="mt-4 p-4 bg-[#f0fdf4]">
             <p className="text-[#15803d] text-[14px]">
               ✅ Landing-ul este publicat și accesibil la: <strong className="font-mono text-[13px]">{getLandingUrl()}</strong>
@@ -341,6 +455,16 @@ export function LandingBuilder() {
         </div>
         
         <div className="flex gap-3 ml-6">
+          <button
+            onClick={() => {
+              void saveLanding();
+            }}
+            disabled={!activeEventId || saving || loading}
+            className="px-5 py-2.5 bg-white border border-[#d1d5db] text-[#4b5563] rounded-lg hover:border-[#960010] hover:text-[#960010] transition-all flex items-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Se salveaza...' : 'Salveaza'}
+          </button>
           {content.published && (
             <button
               onClick={copyLink}
@@ -352,11 +476,12 @@ export function LandingBuilder() {
           )}
           <button
             onClick={togglePublish}
+            disabled={!activeEventId || saving || loading}
             className={`px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${
               content.published
                 ? 'bg-white border border-[#d1d5db] text-[#4b5563] hover:border-[#6b7280] hover:text-[#374151]'
                 : 'bg-[#960010] text-white hover:bg-[#7d0000]'
-            }`}
+            } disabled:opacity-60 disabled:cursor-not-allowed`}
           >
             <Globe className="w-4 h-4" />
             {content.published ? 'Ascunde' : 'Publică'}
@@ -451,8 +576,8 @@ export function LandingBuilder() {
               <div>
                 <label className="block text-[14px] font-medium text-[#374151] mb-2">Text descriere jos (pe fundal alb)</label>
                 <textarea
-                  value={content.message}
-                  onChange={(e) => updateContent('message', e.target.value)}
+                  value={content.heroMessage}
+                  onChange={(e) => updateContent('heroMessage', e.target.value)}
                   rows={3}
                   className="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg outline-none transition-all resize-none"
                   placeholder="Text scurt pentru secțiunea hero..."
@@ -515,8 +640,8 @@ export function LandingBuilder() {
               <div>
                 <label className="block text-[14px] font-medium text-[#374151] mb-2">Descriere pentru secțiunea DATA</label>
                 <textarea
-                  value={content.message}
-                  onChange={(e) => updateContent('message', e.target.value)}
+                  value={content.dateDescription}
+                  onChange={(e) => updateContent('dateDescription', e.target.value)}
                   rows={3}
                   className="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg outline-none transition-all resize-none"
                   placeholder="Descriere pentru secțiunea cu data..."
@@ -836,8 +961,8 @@ export function LandingBuilder() {
               <div>
                 <label className="block text-[14px] font-medium text-[#374151] mb-2">Descriere detalii</label>
                 <textarea
-                  value={content.message}
-                  onChange={(e) => updateContent('message', e.target.value)}
+                  value={content.detailsDescription}
+                  onChange={(e) => updateContent('detailsDescription', e.target.value)}
                   rows={3}
                   className="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg outline-none transition-all resize-none"
                   placeholder="Detalii suplimentare pentru invitați..."
@@ -952,410 +1077,17 @@ export function LandingBuilder() {
       {/* Preview Tab */}
       {activeTab === 'preview' && (
         <div className="bg-white -mx-8 -mb-8">
-          <div className="w-full mx-auto" style={{ maxWidth: '375px' }}>
-            
-            {/* Hero Section - flex flex-col conform Figma */}
-            <div className="content-stretch flex flex-col isolate items-start relative w-full">
-              
-              {/* Nav - z-[3] */}
-              <div className="content-stretch flex flex-col items-start relative shrink-0 w-full z-[3]">
-                <div className="bg-white relative shrink-0 w-full">
-                  <div aria-hidden="true" className="absolute border-[#f5f5f5] border-[0px_0px_1px] border-solid inset-0 pointer-events-none" />
-                  <div className="flex flex-row items-center size-full">
-                    <div className="content-stretch flex items-center justify-between pb-[20px] pt-[22px] px-[16px] relative w-full">
-                      <div className="text-[14px] font-semibold text-black tracking-wide">POLUBVI</div>
-                      <div className="relative shrink-0 size-[28px]">
-                        <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 28 28">
-                          <path d="M4 8h20M4 14h20M4 20h20" stroke="black" strokeWidth="2" strokeLinecap="round"/>
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Hero Content - z-[2], h-[225px] */}
-              <div className="h-[225px] relative shrink-0 w-full z-[2]">
-                <div className="absolute content-stretch flex flex-col gap-[24px] items-center left-[16px] top-[64px] w-[343px]">
-                  <div className="bg-[#f5f5f5] content-stretch flex flex-col h-[32px] items-start justify-center overflow-clip px-[10px] py-[3px] relative rounded-[1.9232e+07px] shrink-0">
-                    <div className="content-stretch flex items-center relative shrink-0">
-                      <p className="font-normal leading-[21.429px] not-italic relative shrink-0 text-[15px] text-black text-nowrap tracking-[-0.1611px]">
-                        {content.subtitle || 'Subtitlu'}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="font-semibold leading-[0.78] not-italic relative shrink-0 text-[88px] text-center tracking-[-5.28px] uppercase max-w-[364.914px]" style={{ color: content.colorPrimary }}>
-                    {content.title || 'TITLU'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Frame2 - Hero Image + Text jos - z-[1], h-[443px] */}
-              <div className="h-[443px] relative shrink-0 w-full z-[1]">
-                <div className="absolute h-[443px] left-0 top-0 w-[375px]">
-                  {content.coverImage ? (
-                    <>
-                      <div 
-                        aria-hidden="true" 
-                        className="absolute inset-0 mix-blend-multiply opacity-[0.21] pointer-events-none"
-                        style={{ 
-                          backgroundImage: 'url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGElEQVQoU2NkYGD4z4AEmBhIBKMKhw4KAVMDAf/GfZLGAAAAAElFTkSuQmCC)',
-                          backgroundSize: '500px 500px',
-                          backgroundRepeat: 'repeat',
-                          backgroundPosition: 'top left'
-                        }}
-                      />
-                      <ImageWithFallback
-                        src={content.coverImage}
-                        alt="Hero"
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                    </>
-                  ) : (
-                    <div className="absolute inset-0 bg-[#e5e5e5] opacity-20" />
-                  )}
-                </div>
-                <p className="absolute font-normal leading-[21.429px] left-[187.5px] not-italic text-[15px] text-center text-white top-[324px] tracking-[-0.1611px] translate-x-[-50%] w-[200px]">
-                  {content.message || 'Text descriere'}
-                </p>
-              </div>
-            </div>
-
-            {/* DATA Section */}
-            <div className="py-24 px-4" style={{ backgroundColor: content.colorPrimary }}>
-              <div className="bg-white">
-                {/* Date Header */}
-                <div className="border-b border-[#e7e7e7] px-4 pt-12 pb-8">
-                  <p className="font-medium text-[43px] leading-none tracking-[-2.58px] uppercase text-center" style={{ color: content.colorPrimary }}>
-                    {content.date ? new Date(content.date).toLocaleDateString('ro-RO', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric'
-                    }).replace(/\//g, '.') : 'DATA'}
-                  </p>
-                </div>
-
-                {/* Description */}
-                <div className="border-b border-[#e7e7e7] px-5 py-7">
-                  <p className="font-normal text-[#414c5a] text-[15px] leading-[21.43px] tracking-[-0.16px] text-center max-w-[360px] mx-auto">
-                    {content.message || 'Descriere eveniment'}
-                  </p>
-                </div>
-
-                {/* Image */}
-                <div className="h-[285px] bg-[#e5e5e5]">
-                  {content.galleryImages[0] ? (
-                    <ImageWithFallback
-                      src={content.galleryImages[0]}
-                      alt="Event"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            {/* LOCAȚIA Section */}
-            <div className="py-24 px-4">
-              <div className="flex flex-col gap-5 items-center mb-10">
-                <p className="font-medium text-[43px] leading-none tracking-[-2.58px] uppercase text-center" style={{ color: content.colorPrimary }}>
-                  {content.location || 'LOCAȚIA'}
-                </p>
-                <p className="font-normal text-[#414c5a] text-[15px] leading-[21.43px] tracking-[-0.16px] text-center max-w-[360px]">
-                  {content.locationAddress || 'Adresa completă a locației'}
-                </p>
-              </div>
-
-              <div className="h-[285px] bg-[#e5e5e5]">
-                {content.galleryImages[1] ? (
-                  <ImageWithFallback
-                    src={content.galleryImages[1]}
-                    alt="Location"
-                    className="w-full h-full object-cover"
-                  />
-                ) : null}
-              </div>
-            </div>
-
-            {/* TIMING Section */}
-            <div className="bg-[#f5f5f5] py-[100px] px-[16px]">
-              <div className="content-stretch flex flex-col gap-[40px] items-center max-w-[1600px] mx-auto w-full">
-                
-                {/* Header */}
-                <div className="content-stretch flex flex-col gap-[20px] items-start not-italic text-center w-full">
-                  <p className="font-medium leading-none text-[43px] tracking-[-2.58px] uppercase w-full" style={{ color: content.colorPrimary }}>
-                    TIMING
-                  </p>
-                  <p className="font-normal leading-[21.429px] max-w-[360px] text-[#414c5a] text-[15px] tracking-[-0.1611px] w-full mx-auto">
-                    {content.dressCode || 'Descriere'}
-                  </p>
-                </div>
-
-                {/* Schedule Grid with Alternating Layout */}
-                <div className="content-stretch flex flex-col gap-[6px] items-start w-full">
-                  
-                  {/* White Grid Container */}
-                  <div className="bg-white content-stretch flex flex-col items-start w-full">
-                    {content.schedule.map((item, index) => {
-                      const isEven = index % 2 === 0;
-                      return (
-                        <div key={index} className="relative w-full">
-                          <div aria-hidden="true" className="absolute border-[#e7e7e7] border-[0px_1px_1px_0px] border-solid inset-0 pointer-events-none" />
-                          <div className="flex flex-row items-center justify-end size-full">
-                            <div className={`content-stretch flex gap-[20px] items-center px-[32px] py-[40px] relative w-full ${isEven ? 'justify-end' : 'justify-start'}`}>
-                              
-                              {/* Layout alternant */}
-                              {isEven ? (
-                                <>
-                                  {/* Text la stânga */}
-                                  <div className="basis-0 content-stretch flex flex-col gap-[8px] grow items-start justify-center min-h-px min-w-px not-italic">
-                                    <p className="font-medium leading-none text-[44px] tracking-[-0.88px] uppercase w-full" style={{ color: content.colorPrimary }}>
-                                      {item.time || 'ORA'}
-                                    </p>
-                                    <p className="font-normal leading-[21.429px] text-[#414c5a] text-[15px] tracking-[-0.1611px] w-full">
-                                      {item.activity || 'Descriere'}
-                                    </p>
-                                  </div>
-                                  {/* Icon la dreapta */}
-                                  {content.timingIcons[index] ? (
-                                    <div className="shrink-0 size-[84px] relative overflow-hidden">
-                                      <img
-                                        src={content.timingIcons[index]}
-                                        alt={`Icon ${index + 1}`}
-                                        className="w-full h-full object-cover"
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="bg-[#d9d9d9] shrink-0 size-[84px]" />
-                                  )}
-                                </>
-                              ) : (
-                                <>
-                                  {/* Icon la stânga */}
-                                  {content.timingIcons[index] ? (
-                                    <div className="shrink-0 size-[84px] relative overflow-hidden">
-                                      <img
-                                        src={content.timingIcons[index]}
-                                        alt={`Icon ${index + 1}`}
-                                        className="w-full h-full object-cover"
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="bg-[#d9d9d9] shrink-0 size-[84px]" />
-                                  )}
-                                  {/* Text la dreapta */}
-                                  <div className="basis-0 content-stretch flex flex-col gap-[8px] grow items-start justify-center min-h-px min-w-px not-italic">
-                                    <p className="font-medium leading-none text-[44px] tracking-[-0.88px] uppercase w-full" style={{ color: content.colorPrimary }}>
-                                      {item.time || 'ORA'}
-                                    </p>
-                                    <p className="font-normal leading-[21.429px] text-[#414c5a] text-[15px] tracking-[-0.1611px] w-full">
-                                      {item.activity || 'Descriere'}
-                                    </p>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Image Mare */}
-                  <div className="bg-[rgba(0,0,0,0.2)] h-[560px] relative w-full">
-                    <div aria-hidden="true" className="absolute border border-[#e7e7e7] border-solid inset-0 pointer-events-none" />
-                    {content.galleryImages[2] ? (
-                      <ImageWithFallback
-                        src={content.galleryImages[2]}
-                        alt="Timing"
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                    ) : null}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            {/* DETALII Section */}
-            <div className="py-40 px-3" style={{ backgroundColor: content.colorPrimary }}>
-              <div className="bg-white">
-                <div className="px-5 py-12 flex flex-col gap-8 items-center">
-                  <div className="flex flex-col gap-5 items-center">
-                    <p className="font-medium text-[43px] leading-none tracking-[-2.58px] uppercase text-center max-w-[280px]" style={{ color: content.colorPrimary }}>
-                      DETALII
-                    </p>
-                    <p className="font-normal text-[#414c5a] text-[15px] leading-[21.43px] tracking-[-0.16px] text-center">
-                      {content.message || 'Descriere'}
-                    </p>
-                  </div>
-
-                  <div className="h-[285px] w-full bg-[#e5e5e5]">
-                    {content.galleryImages[3] ? (
-                      <ImageWithFallback
-                        src={content.galleryImages[3]}
-                        alt="Details"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* RSVP Section */}
-            <div className="bg-white py-16 px-4">
-              <div className="max-w-[343px] mx-auto">
-                {/* Header */}
-                <div className="flex flex-col gap-3 items-center mb-10">
-                  <p className="font-medium text-[43px] leading-none tracking-[-2.58px] uppercase text-center" style={{ color: content.colorPrimary }}>
-                    RSVP
-                  </p>
-                  <p className="font-normal text-[#414c5a] text-[15px] leading-[21.43px] tracking-[-0.16px] text-center">
-                    Confirmă prezența ta la eveniment
-                  </p>
-                </div>
-
-                {/* RSVP Form */}
-                <div className="space-y-6">
-                  {/* Răspuns: VIN / NU VIN */}
-                  <div>
-                    <label className="block font-medium text-[14px] text-[#111827] mb-3">
-                      Răspuns *
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button 
-                        className="py-3 px-4 border-2 rounded-lg font-medium text-[15px] transition-all"
-                        style={{ 
-                          borderColor: content.colorPrimary,
-                          backgroundColor: content.colorPrimary,
-                          color: 'white'
-                        }}
-                      >
-                        VIN
-                      </button>
-                      <button 
-                        className="py-3 px-4 border-2 border-[#e5e7eb] rounded-lg font-medium text-[15px] text-[#6b7280] hover:border-[#d1d5db] transition-all"
-                      >
-                        NU VIN
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Nume */}
-                  <div>
-                    <label className="block font-medium text-[14px] text-[#111827] mb-2">
-                      Nume *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Introdu numele tău"
-                      className="w-full px-4 py-3 border border-[#e5e7eb] rounded-lg text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none focus:border-2"
-                      onFocus={(e) => e.currentTarget.style.borderColor = content.colorPrimary}
-                      onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
-                    />
-                  </div>
-
-                  {/* Telefon */}
-                  <div>
-                    <label className="block font-medium text-[14px] text-[#111827] mb-2">
-                      Telefon *
-                    </label>
-                    <input
-                      type="tel"
-                      placeholder="+40 XXX XXX XXX"
-                      className="w-full px-4 py-3 border border-[#e5e7eb] rounded-lg text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none focus:border-2"
-                      onFocus={(e) => e.currentTarget.style.borderColor = content.colorPrimary}
-                      onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
-                    />
-                  </div>
-
-                  {/* Adulți și Copii */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block font-medium text-[14px] text-[#111827] mb-2">
-                        Adulți *
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="20"
-                        defaultValue="1"
-                        placeholder="0"
-                        className="w-full px-4 py-3 border border-[#e5e7eb] rounded-lg text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none focus:border-2"
-                        onFocus={(e) => e.currentTarget.style.borderColor = content.colorPrimary}
-                        onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-medium text-[14px] text-[#111827] mb-2">
-                        Copii
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="20"
-                        defaultValue="0"
-                        placeholder="0"
-                        className="w-full px-4 py-3 border border-[#e5e7eb] rounded-lg text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none focus:border-2"
-                        onFocus={(e) => e.currentTarget.style.borderColor = content.colorPrimary}
-                        onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Notițe */}
-                  <div>
-                    <label className="block font-medium text-[14px] text-[#111827] mb-2">
-                      Notițe (opțional)
-                    </label>
-                    <textarea
-                      rows={4}
-                      placeholder="Preferințe alimentare, alergii, mesaje speciale..."
-                      className="w-full px-4 py-3 border border-[#e5e7eb] rounded-lg text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none resize-none focus:border-2"
-                      onFocus={(e) => e.currentTarget.style.borderColor = content.colorPrimary}
-                      onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
-                    />
-                  </div>
-
-                  {/* Submit Button */}
-                  <button
-                    className="w-full py-4 rounded-lg font-semibold text-[16px] text-white transition-all shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: content.colorPrimary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.opacity = '0.9';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.opacity = '1';
-                    }}
-                  >
-                    Confirmă prezența
-                  </button>
-
-                  <p className="text-[12px] text-[#6b7280] text-center">
-                    * Câmpuri obligatorii
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-black py-32 px-5 overflow-hidden">
-              <div className="flex flex-col gap-10 items-center">
-                <p className="font-semibold text-white text-[88px] leading-[0.78] tracking-[-5.28px] uppercase text-center">
-                  POLUBVI
-                </p>
-                <div className="w-[300px] h-[1px] bg-white opacity-20" />
-                <p className="font-normal text-[rgba(255,255,255,0.6)] text-[15px] leading-[21.43px] tracking-[-0.16px] text-center">
-                  © 2025 POLUBVI.<br />
-                  Toate drepturile rezervate.
-                </p>
-              </div>
-            </div>
-
-          </div>
+          <LandingMobileView
+            content={content}
+            showRsvp
+            previewMode
+            responseStatus={previewResponseStatus}
+            formData={previewFormData}
+            onFormChange={(field, value) =>
+              setPreviewFormData((prev) => ({ ...prev, [field]: value }))
+            }
+            onResponseStatusChange={setPreviewResponseStatus}
+          />
         </div>
       )}
 

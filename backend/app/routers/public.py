@@ -7,8 +7,35 @@ from app.models.table import Table
 from app.schemas.guest import GuestResponse
 from app.schemas.rsvp import RsvpSubmit
 from app.services.rsvp_service import get_guest_by_token
+from app.routers.guests import serialize_guest
 
 router = APIRouter(prefix="/public", tags=["Public RSVP"])
+
+
+@router.get("/landing/{slug}")
+def get_public_landing(slug: str, db: Session = Depends(get_db)):
+    landing_page = db.query(LandingPage).filter(LandingPage.public_slug == slug).first()
+
+    if not landing_page or not landing_page.published:
+        raise HTTPException(status_code=404, detail="Landing page not available")
+
+    event = landing_page.event
+
+    return {
+        "event": {
+            "id": event.id,
+            "title": event.title,
+            "date": event.date,
+            "city": event.venue_city or event.city,
+            "venue_name": event.venue_name,
+            "venue_city": event.venue_city,
+        },
+        "landing_page": {
+            "content_json": landing_page.content_json,
+            "published": landing_page.published,
+            "public_slug": landing_page.public_slug,
+        },
+    }
 
 
 @router.get("/rsvp/{token}")
@@ -33,6 +60,7 @@ def get_rsvp_info(token: str, db: Session = Depends(get_db)):
         "guest": {
             "id": guest.id,
             "name": guest.name,
+            "phone": guest.phone,
             "status": guest.status,
             "adults": guest.adults,
             "children": guest.children,
@@ -42,7 +70,9 @@ def get_rsvp_info(token: str, db: Session = Depends(get_db)):
             "id": guest.event.id,
             "title": guest.event.title,
             "date": guest.event.date,
-            "city": guest.event.city
+            "city": guest.event.venue_city or guest.event.city,
+            "venue_name": guest.event.venue_name,
+            "venue_city": guest.event.venue_city,
         },
         "landing_page": {
             "content_json": landing_page.content_json if landing_page else None,
@@ -80,4 +110,4 @@ def submit_rsvp(
     
     db.commit()
     db.refresh(guest)
-    return guest
+    return serialize_guest(guest)

@@ -22,12 +22,36 @@ def ensure_budget_columns(db: Session):
                 "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()"
             )
         )
+    if "price_type" not in budget_columns:
+        db.execute(
+            text(
+                "ALTER TABLE budget_items "
+                "ADD COLUMN IF NOT EXISTS price_type VARCHAR DEFAULT 'FIX_EVENT'"
+            )
+        )
+    if "unit_price" not in budget_columns:
+        db.execute(
+            text(
+                "ALTER TABLE budget_items "
+                "ADD COLUMN IF NOT EXISTS unit_price DOUBLE PRECISION"
+            )
+        )
+    if "quantity" not in budget_columns:
+        db.execute(
+            text(
+                "ALTER TABLE budget_items "
+                "ADD COLUMN IF NOT EXISTS quantity INTEGER"
+            )
+        )
 
     db.execute(
         text(
             "UPDATE budget_items "
             "SET created_at = COALESCE(created_at, NOW()), "
-            "updated_at = COALESCE(updated_at, NOW())"
+            "updated_at = COALESCE(updated_at, NOW()), "
+            "price_type = COALESCE(price_type, 'FIX_EVENT'), "
+            "unit_price = COALESCE(unit_price, estimated_cost), "
+            "quantity = COALESCE(quantity, 1)"
         )
     )
     db.commit()

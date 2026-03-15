@@ -566,7 +566,7 @@ export function EventWizard() {
         formData.venuePricePerGuest > 0;
 
       await wizardService.updateStep4(eventId, {
-        city: isKnownVenue ? formData.venue : null,
+        city: null,
         venue_city: isKnownVenue ? formData.venue : null,
         venue_name: isKnownVenue ? formData.venue : null,
         address: isKnownVenue ? formData.venue : null,
@@ -620,17 +620,7 @@ export function EventWizard() {
       });
 
       await wizardService.updateStep7(eventId, {
-        budget_items: formData.hasBudget
-          ? [
-              {
-                name: "Buget total estimat",
-                category: "Buget general",
-                estimatedPrice: formData.budget,
-                realPrice: formData.budget,
-                paymentStatus: "unpaid",
-              },
-            ]
-          : [],
+        budget_items: [],
       });
     } else if (currentStep === 8) {
       // Step 8: Pachete / Finalizare

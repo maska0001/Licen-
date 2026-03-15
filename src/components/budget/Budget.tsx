@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../App';
-import { Plus, Pencil, DollarSign, TrendingUp, TrendingDown, X, Trash2 } from 'lucide-react';
+import { Plus, Pencil, DollarSign, TrendingUp, TrendingDown, X, Trash2, ChevronDown } from 'lucide-react';
 import { BudgetCategoryItem } from './BudgetCategoryItem';
 import { TASK_CATEGORIES } from '../../data/categories';
 import { eventService, Event } from '../../services/eventService';
@@ -18,11 +18,17 @@ export function Budget() {
   const [newItem, setNewItem] = useState({
     category: '📋 General',
     name: '',
+    priceType: 'FIX_EVENT' as const,
+    unitPrice: 0,
+    quantity: 1,
     estimatedPrice: 0,
     realPrice: 0,
     paymentStatus: 'unpaid' as const,
   });
   const [editValues, setEditValues] = useState({
+    priceType: 'FIX_EVENT' as const,
+    unitPrice: 0,
+    quantity: 1,
     estimatedPrice: 0,
     realPrice: 0,
     paymentStatus: 'unpaid' as const,
@@ -50,6 +56,9 @@ export function Budget() {
           supplierId: item.supplier_id?.toString(),
           category: item.category || '📋 General',
           name: item.name,
+          priceType: item.price_type || 'FIX_EVENT',
+          unitPrice: item.unit_price ?? item.estimated_cost ?? 0,
+          quantity: item.quantity ?? 1,
           estimatedPrice: item.estimated_cost || 0,
           realPrice: item.actual_cost || 0,
           paymentStatus: item.payment_status || 'unpaid',
@@ -83,6 +92,9 @@ export function Budget() {
   const startEdit = (item: typeof budgetItems[0]) => {
     setEditingId(item.id);
     setEditValues({
+      priceType: item.priceType || 'FIX_EVENT',
+      unitPrice: item.unitPrice || item.estimatedPrice,
+      quantity: item.quantity || 1,
       estimatedPrice: item.estimatedPrice,
       realPrice: item.realPrice,
       paymentStatus: item.paymentStatus,
@@ -98,6 +110,9 @@ export function Budget() {
       
       // Update budget item in backend
       await budgetService.updateBudgetItem(parseInt(editingId), {
+        price_type: currentItem.priceType === 'PER_INVITAT' ? 'PER_INVITAT' : 'FIX_EVENT',
+        unit_price: currentItem.priceType === 'PER_INVITAT' ? (editValues.unitPrice || 0) : editValues.estimatedPrice,
+        quantity: currentItem.priceType === 'PER_INVITAT' ? (editValues.quantity || currentItem.quantity || 1) : 1,
         estimated_cost: editValues.estimatedPrice,
         actual_cost: editValues.realPrice,
         payment_status: editValues.paymentStatus,
@@ -106,7 +121,14 @@ export function Budget() {
       // Update local state
       setBudgetItems(budgetItems.map(item =>
         item.id === editingId
-          ? { ...item, ...editValues, updatedAt: new Date().toISOString() }
+          ? {
+              ...item,
+              ...editValues,
+              priceType: currentItem.priceType,
+              unitPrice: currentItem.priceType === 'PER_INVITAT' ? (editValues.unitPrice || 0) : editValues.estimatedPrice,
+              quantity: currentItem.priceType === 'PER_INVITAT' ? (editValues.quantity || currentItem.quantity || 1) : 1,
+              updatedAt: new Date().toISOString(),
+            }
           : item
       ));
       
@@ -132,6 +154,9 @@ export function Budget() {
       const createdItem = await budgetService.createBudgetItem(parseInt(activeEventId), {
         name: newItem.name,
         category: newItem.category,
+        price_type: newItem.priceType,
+        unit_price: newItem.priceType === 'PER_INVITAT' ? newItem.unitPrice : newItem.estimatedPrice,
+        quantity: newItem.priceType === 'PER_INVITAT' ? newItem.quantity : 1,
         estimated_cost: newItem.estimatedPrice,
         actual_cost: newItem.realPrice,
         payment_status: newItem.paymentStatus,
@@ -143,6 +168,9 @@ export function Budget() {
         supplierId: createdItem.supplier_id?.toString(),
         category: createdItem.category || '📋 General',
         name: createdItem.name,
+        priceType: createdItem.price_type || 'FIX_EVENT',
+        unitPrice: createdItem.unit_price ?? createdItem.estimated_cost ?? 0,
+        quantity: createdItem.quantity ?? 1,
         estimatedPrice: createdItem.estimated_cost || 0,
         realPrice: createdItem.actual_cost || 0,
         paymentStatus: createdItem.payment_status || 'unpaid',
@@ -158,6 +186,9 @@ export function Budget() {
       setNewItem({
         category: '📋 General',
         name: '',
+        priceType: 'FIX_EVENT',
+        unitPrice: 0,
+        quantity: 1,
         estimatedPrice: 0,
         realPrice: 0,
         paymentStatus: 'unpaid',
@@ -436,13 +467,26 @@ export function Budget() {
                             <span className="font-medium text-[14px] text-[#101828] tracking-[-0.1504px]">{item.name}</span>
                           </td>
                           <td className="py-4 px-4 text-right">
+                            {item.priceType === 'PER_INVITAT' && (
+                              <div className="text-[11px] text-[#6a7282] mb-1">
+                                {(item.unitPrice || 0).toLocaleString()} MDL × {(item.quantity || 1).toLocaleString()}
+                              </div>
+                            )}
                             <input
                               type="number"
-                              value={editValues.estimatedPrice}
+                              value={item.priceType === 'PER_INVITAT' ? (editValues.unitPrice ?? 0) : editValues.estimatedPrice}
                               onChange={(e) => {
-                                const newEstimated = parseFloat(e.target.value) || 0;
+                                const rawValue = parseFloat(e.target.value) || 0;
+                                const newEstimated = item.priceType === 'PER_INVITAT'
+                                  ? rawValue * (editValues.quantity || item.quantity || 1)
+                                  : rawValue;
                                 const newStatus = calculatePaymentStatus(editValues.realPrice, newEstimated);
-                                setEditValues({ ...editValues, estimatedPrice: newEstimated, paymentStatus: newStatus });
+                                setEditValues({
+                                  ...editValues,
+                                  unitPrice: item.priceType === 'PER_INVITAT' ? rawValue : editValues.unitPrice,
+                                  estimatedPrice: newEstimated,
+                                  paymentStatus: newStatus,
+                                });
                               }}
                               className="w-24 px-2 py-1 border border-[#960010] rounded text-right font-semibold text-[14px] text-[#101828] tracking-[-0.1504px]"
                             />
@@ -497,6 +541,11 @@ export function Budget() {
                             <span className="font-medium text-[14px] text-[#101828] tracking-[-0.1504px]">{item.name}</span>
                           </td>
                           <td className="py-4 px-4 text-right">
+                            {item.priceType === 'PER_INVITAT' && (
+                              <div className="text-[11px] text-[#6a7282] mb-1">
+                                {(item.unitPrice || 0).toLocaleString()} MDL × {(item.quantity || 1).toLocaleString()} invitați
+                              </div>
+                            )}
                             <span className="font-semibold text-[14px] text-[#101828] tracking-[-0.1504px]">
                               {item.estimatedPrice.toLocaleString()} MDL
                             </span>
@@ -617,31 +666,88 @@ export function Budget() {
               
               <div>
                 <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Categorie *</label>
-                <select
-                  value={newItem.category}
-                  onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-                  className="w-full px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none"
-                >
-                  {TASK_CATEGORIES.map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={newItem.category}
+                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                    className="w-full appearance-none px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none bg-white text-[#101828]"
+                  >
+                    {TASK_CATEGORIES.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
               
               <div>
                 <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Preț estimat (MDL) *</label>
+                {newItem.priceType === 'PER_INVITAT' && (
+                  <p className="text-[12px] text-[#6a7282] mb-2">
+                    {(newItem.unitPrice || 0).toLocaleString()} MDL × {(newItem.quantity || 1).toLocaleString()} invitați = {(newItem.estimatedPrice || 0).toLocaleString()} MDL
+                  </p>
+                )}
                 <input
                   type="number"
-                  value={newItem.estimatedPrice || ''}
+                  value={newItem.priceType === 'PER_INVITAT' ? (newItem.unitPrice || '') : (newItem.estimatedPrice || '')}
                   onChange={(e) => {
-                    const newEstimated = parseFloat(e.target.value) || 0;
+                    const rawValue = parseFloat(e.target.value) || 0;
+                    const newEstimated = newItem.priceType === 'PER_INVITAT'
+                      ? rawValue * (newItem.quantity || 1)
+                      : rawValue;
                     const newStatus = calculatePaymentStatus(newItem.realPrice, newEstimated);
-                    setNewItem({ ...newItem, estimatedPrice: newEstimated, paymentStatus: newStatus });
+                    setNewItem({
+                      ...newItem,
+                      unitPrice: newItem.priceType === 'PER_INVITAT' ? rawValue : newItem.unitPrice,
+                      estimatedPrice: newEstimated,
+                      paymentStatus: newStatus,
+                    });
                   }}
                   placeholder="Ex: 5000"
                   className="w-full px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none"
                 />
               </div>
+              
+              <div>
+                <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Tip preț</label>
+                <div className="relative">
+                  <select
+                    value={newItem.priceType}
+                    onChange={(e) => {
+                      const nextType = e.target.value as 'FIX_EVENT' | 'PER_INVITAT';
+                      const nextEstimated =
+                        nextType === 'PER_INVITAT'
+                          ? (newItem.unitPrice || 0) * (newItem.quantity || 1)
+                          : newItem.estimatedPrice;
+                      const nextStatus = calculatePaymentStatus(newItem.realPrice, nextEstimated);
+                      setNewItem({ ...newItem, priceType: nextType, estimatedPrice: nextEstimated, paymentStatus: nextStatus });
+                    }}
+                    className="w-full appearance-none px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none bg-white text-[#101828]"
+                  >
+                    <option value="FIX_EVENT">Fix per eveniment</option>
+                    <option value="PER_INVITAT">Per invitat</option>
+                  </select>
+                  <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              {newItem.priceType === 'PER_INVITAT' && (
+                <div>
+                  <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Număr invitați</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newItem.quantity || ''}
+                    onChange={(e) => {
+                      const qty = parseInt(e.target.value, 10) || 1;
+                      const newEstimated = (newItem.unitPrice || 0) * qty;
+                      const newStatus = calculatePaymentStatus(newItem.realPrice, newEstimated);
+                      setNewItem({ ...newItem, quantity: qty, estimatedPrice: newEstimated, paymentStatus: newStatus });
+                    }}
+                    className="w-full px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none"
+                  />
+                </div>
+              )}
               
               <div>
                 <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Achitat (MDL)</label>

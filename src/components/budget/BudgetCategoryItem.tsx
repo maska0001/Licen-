@@ -5,6 +5,9 @@ interface BudgetItem {
   id: string;
   category: string;
   name: string;
+  priceType?: 'FIX_EVENT' | 'PER_INVITAT';
+  unitPrice?: number;
+  quantity?: number;
   estimatedPrice: number;
   realPrice: number;
   paymentStatus: 'paid' | 'deposit' | 'unpaid';
@@ -15,6 +18,9 @@ interface BudgetCategoryItemProps {
   item: BudgetItem;
   isEditing: boolean;
   editValues: {
+    priceType?: 'FIX_EVENT' | 'PER_INVITAT';
+    unitPrice?: number;
+    quantity?: number;
     estimatedPrice: number;
     realPrice: number;
     paymentStatus: 'paid' | 'deposit' | 'unpaid';
@@ -23,7 +29,7 @@ interface BudgetCategoryItemProps {
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: () => void;
-  onEditValuesChange: (values: { estimatedPrice: number; realPrice: number; paymentStatus: 'paid' | 'deposit' | 'unpaid' }) => void;
+  onEditValuesChange: (values: { priceType?: 'FIX_EVENT' | 'PER_INVITAT'; unitPrice?: number; quantity?: number; estimatedPrice: number; realPrice: number; paymentStatus: 'paid' | 'deposit' | 'unpaid' }) => void;
   getPaymentStatusColor: (status: string) => string;
   getPaymentStatusText: (status: string) => string;
 }
@@ -59,14 +65,24 @@ export function BudgetCategoryItem({
           />
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[12px] text-[#6a7282] mb-1">Preț estimat</label>
+              <label className="block text-[12px] text-[#6a7282] mb-1">
+                {item.priceType === 'PER_INVITAT' ? 'Preț per invitat' : 'Preț estimat'}
+              </label>
               <input
                 type="number"
-                value={editValues.estimatedPrice}
+                value={item.priceType === 'PER_INVITAT' ? (editValues.unitPrice ?? 0) : editValues.estimatedPrice}
                 onChange={(e) => {
-                  const newEstimated = parseFloat(e.target.value) || 0;
+                  const rawValue = parseFloat(e.target.value) || 0;
+                  const newEstimated = item.priceType === 'PER_INVITAT'
+                    ? rawValue * (editValues.quantity || item.quantity || 1)
+                    : rawValue;
                   const newStatus = calculatePaymentStatus(editValues.realPrice, newEstimated);
-                  onEditValuesChange({ ...editValues, estimatedPrice: newEstimated, paymentStatus: newStatus });
+                  onEditValuesChange({
+                    ...editValues,
+                    unitPrice: item.priceType === 'PER_INVITAT' ? rawValue : editValues.unitPrice,
+                    estimatedPrice: newEstimated,
+                    paymentStatus: newStatus,
+                  });
                 }}
                 className="w-full px-4 py-2 text-[14px] border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none"
               />
@@ -85,6 +101,11 @@ export function BudgetCategoryItem({
               />
             </div>
           </div>
+          {item.priceType === 'PER_INVITAT' && (
+            <div className="w-full px-4 py-2 text-[14px] border border-[#e5e7eb] rounded-full bg-[#f9fafb] text-[#6a7282]">
+              {(editValues.unitPrice ?? item.unitPrice ?? 0).toLocaleString()} MDL × {(editValues.quantity ?? item.quantity ?? 1).toLocaleString()} invitați = {(editValues.estimatedPrice || 0).toLocaleString()} MDL
+            </div>
+          )}
           <div className="w-full px-4 py-2 text-[14px] border border-[#e5e7eb] rounded-full bg-[#f9fafb] flex items-center">
             <span className="text-[12px] text-[#6a7282] mr-2">Status:</span>
             <span className={`text-[10px] px-3 py-1 rounded-full uppercase font-semibold ${getPaymentStatusColor(editValues.paymentStatus)}`}>
@@ -119,6 +140,12 @@ export function BudgetCategoryItem({
       <div className="flex-1 flex flex-col gap-[8px]">
         <h4 className="font-medium text-[16px] leading-[24px] text-[#101828] tracking-[-0.625px] uppercase">{item.name}</h4>
         <div className="flex items-center gap-[12px] text-[12px] leading-[18px] text-[#6a7282]">
+          <span>
+            {item.priceType === 'PER_INVITAT'
+              ? `${(item.unitPrice || 0).toLocaleString()} MDL × ${(item.quantity || 1).toLocaleString()} invitați`
+              : 'Preț fix eveniment'}
+          </span>
+          <span>•</span>
           <span>Estimat: {item.estimatedPrice.toLocaleString()} MDL</span>
           <span>•</span>
           <span>Achitat: {item.realPrice.toLocaleString()} MDL</span>

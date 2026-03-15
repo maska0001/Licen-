@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, field_serializer
-from typing import Optional
+from typing import Any, Optional
 from app.models.guest import RsvpStatus
 
 
@@ -7,6 +7,7 @@ class GuestCreate(BaseModel):
     name: str
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
+    status: Optional[RsvpStatus] = RsvpStatus.pending
     adults: Optional[int] = 1
     children: Optional[int] = 0
     notes: Optional[str] = None
@@ -41,11 +42,18 @@ class GuestResponse(BaseModel):
     table_id: Optional[int]
     parent_guest_id: Optional[int]
     is_children_only: bool
+    rsvp_token: Optional[str] = None
 
     @field_serializer('is_children_only')
     def serialize_is_children_only(self, value: int) -> bool:
         """Convert integer (0/1) to boolean for response"""
         return bool(value)
+
+    @field_serializer('rsvp_token')
+    def serialize_rsvp_token(self, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        return getattr(value, 'token', value)
 
     class Config:
         from_attributes = True

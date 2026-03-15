@@ -29,6 +29,7 @@ from app.schemas.event import (
 )
 from app.schemas.package import EventPackageResponse
 from app.core.security import get_current_user
+from app.services.landing_content import sync_landing_fields_from_content
 from app.services.pricing_service import resolve_supplier_pricing
 from app.services.service_relations import get_service_by_id, get_service_by_name
 
@@ -239,7 +240,6 @@ def update_step4(
     previous_venue_name = event.venue_name
 
     is_unknown_location = step4_data.location_mode == "unknown"
-    resolved_city = None if is_unknown_location else step4_data.city
     resolved_venue_city = None if is_unknown_location else step4_data.venue_city
     resolved_venue_name = None if is_unknown_location else step4_data.venue_name
     resolved_address = None if is_unknown_location else step4_data.address
@@ -247,7 +247,7 @@ def update_step4(
         None if is_unknown_location else step4_data.venue_price_per_guest
     )
 
-    event.city = resolved_city
+    event.city = resolved_venue_city
     event.venue_city = resolved_venue_city
     event.venue_name = resolved_venue_name
     event.venue_address = resolved_address
@@ -272,6 +272,15 @@ def update_step4(
         for supplier in managed_suppliers:
             db.delete(supplier)
     else:
+        matching_template = (
+            db.query(SupplierTemplate)
+            .filter(
+                SupplierTemplate.is_active == True,
+                SupplierTemplate.name == resolved_venue_name,
+            )
+            .first()
+        )
+        is_custom_venue = matching_template is None
         existing_supplier = next(
             (supplier for supplier in managed_suppliers if supplier.name == resolved_venue_name),
             None,
@@ -283,7 +292,7 @@ def update_step4(
 
         if existing_supplier:
             existing_supplier.name = resolved_venue_name
-            existing_supplier.location = resolved_city
+            existing_supplier.location = resolved_venue_city
             existing_supplier.service_id = getattr(
                 get_service_by_name(db, "Restaurant"), "id", None
             )
@@ -294,7 +303,7 @@ def update_step4(
             if existing_supplier.original_price_type is None:
                 existing_supplier.original_price_type = "PER_INVITAT"
             existing_supplier.selected = True
-            existing_supplier.is_custom = True
+            existing_supplier.is_custom = is_custom_venue
             existing_supplier.category = "Restaurant"
             if not existing_supplier.rating:
                 existing_supplier.rating = 4.5
@@ -304,14 +313,14 @@ def update_step4(
                 name=resolved_venue_name,
                 category="Restaurant",
                 service_id=getattr(restaurant_service, "id", None),
-                location=resolved_city,
+                location=resolved_venue_city,
                 price=resolved_venue_price,
                 price_type="PER_INVITAT",
                 original_price=resolved_venue_price,
                 original_price_type="PER_INVITAT",
                 selected=True,
                 event_id=event.id,
-                is_custom=True,
+                is_custom=is_custom_venue,
                 rating=4.5,
             )
             db.add(venue_supplier)
@@ -403,10 +412,22 @@ def update_step6(
         resolved_services = []
 
         if step6_data.service_ids:
+            invalid_service_ids = []
             for idx, service_id in enumerate(step6_data.service_ids):
                 service = get_service_by_id(db, service_id)
                 if service:
                     resolved_services.append((idx, service))
+                else:
+                    invalid_service_ids.append(service_id)
+
+            if invalid_service_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Invalid service_ids provided: "
+                        + ", ".join(str(service_id) for service_id in invalid_service_ids)
+                    ),
+                )
 
         elif step6_data.services:
             for idx, service_name in enumerate(step6_data.services):
@@ -504,19 +525,19 @@ def update_step8(
     
     if landing_page:
         # Actualizează landing page existent
-        landing_page.content = step8_data.content_json or {}
         landing_page.content_json = json.dumps(step8_data.content_json or {}) if step8_data.content_json else None
         landing_page.published = step8_data.published
+        sync_landing_fields_from_content(landing_page)
     else:
         # Creează landing page nou
         import json
         landing_page = LandingPage(
             event_id=event_id,
-            content=step8_data.content_json or {},
             content_json=json.dumps(step8_data.content_json or {}) if step8_data.content_json else None,
             published=step8_data.published,
             public_slug=f"event-{event_id}"  # Default slug, poate fi personalizat
         )
+        sync_landing_fields_from_content(landing_page)
         db.add(landing_page)
     
     event.wizard_step = max(event.wizard_step, 8)
@@ -736,6 +757,8 @@ def generate_packages(
                 estimated_cost=final_price,
                 supplier_rating_snapshot=supplier.rating,
                 supplier_is_custom_snapshot=supplier.is_custom,
+                supplier_contact_snapshot=supplier.contact,
+                supplier_location_snapshot=supplier.location,
                 matrix_position="existing",  # Mark as existing supplier
                 pricing_model=supplier.price_type,
                 base_price_per_unit=supplier.price,
@@ -790,7 +813,7 @@ def generate_packages(
             
             # Calculate final price based on pricing model
             final_price = choice.base_price
-            if choice.pricing_model == "PER_INVITAT" and event.guest_count:
+            if choice.pricing_model in {"PER_INVITAT", "PER_PERSON"} and event.guest_count:
                 final_price = choice.base_price * event.guest_count
                 print(f"DEBUG: {choice.template.name} - PER_INVITAT pricing: {choice.base_price} x {event.guest_count} = {final_price}")
             else:
@@ -806,8 +829,10 @@ def generate_packages(
                 estimated_cost=final_price,
                 supplier_rating_snapshot=choice.template.rating,
                 supplier_is_custom_snapshot=False,
+                supplier_contact_snapshot=choice.template.phone,
+                supplier_location_snapshot=None,
                 matrix_position="low" if i == 0 else "middle" if i == 1 else "high",
-                pricing_model=choice.pricing_model,
+                pricing_model="PER_INVITAT" if choice.pricing_model in {"PER_INVITAT", "PER_PERSON"} else "FIX_EVENT",
                 base_price_per_unit=choice.base_price,
             )
             db.add(item)
@@ -870,7 +895,7 @@ def select_package(
         )
         service_name = service.name if service else item.service_type
         resolved_price_type = (
-            "PER_INVITAT" if item.pricing_model == "PER_INVITAT" else "FIX_EVENT"
+            "PER_INVITAT" if item.pricing_model in {"PER_INVITAT", "PER_PERSON"} else "FIX_EVENT"
         )
         resolved_base_price = (
             item.base_price_per_unit
@@ -882,10 +907,13 @@ def select_package(
             name=item.supplier_name_snapshot,
             category=service_name,
             service_id=getattr(service, "id", None),
+            contact=item.supplier_contact_snapshot,
+            location=item.supplier_location_snapshot,
             price=resolved_base_price,
             price_type=resolved_price_type,
             original_price=resolved_base_price,
             original_price_type=resolved_price_type,
+            rating=item.supplier_rating_snapshot or 0.0,
             selected=True,
             event_id=event.id,
             is_custom=bool(item.supplier_is_custom_snapshot),
@@ -896,6 +924,9 @@ def select_package(
         budget_item = BudgetItem(
             category=service_name,
             name=item.supplier_name_snapshot,
+            price_type=resolved_price_type,
+            unit_price=resolved_base_price,
+            quantity=event.guest_count if resolved_price_type == "PER_INVITAT" else 1,
             estimated_cost=item.estimated_cost,
             actual_cost=0.0,
             payment_status=PaymentStatus.unpaid,

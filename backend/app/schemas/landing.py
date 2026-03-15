@@ -10,6 +10,7 @@ class LandingPageUpdate(BaseModel):
     cover_image: Optional[str] = None
     message: Optional[str] = None
     dress_code: Optional[str] = None
+    public_slug: Optional[str] = None
     content_json: Optional[str] = None
     published: Optional[bool] = None
 

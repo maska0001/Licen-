@@ -15,12 +15,14 @@ export interface Guest {
   table_id: number | null;
   parent_guest_id: number | null;
   is_children_only: boolean;
+  rsvp_token: string | null;
 }
 
 export interface GuestCreate {
   name: string;
   phone?: string;
   email?: string;
+  status?: RsvpStatus;
   adults?: number;
   children?: number;
   notes?: string;

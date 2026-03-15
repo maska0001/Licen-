@@ -12,6 +12,15 @@ from app.utils.permissions import verify_event_ownership
 router = APIRouter(tags=["Tables"])
 
 
+def _guest_seats(guest: Guest) -> int:
+    return max(1, (guest.adults or 0) + (guest.children or 0))
+
+
+def _recalculate_table_occupied_seats(db: Session, table: Table) -> None:
+    guests = db.query(Guest).filter(Guest.table_id == table.id).all()
+    table.occupied_seats = sum(_guest_seats(guest) for guest in guests)
+
+
 @router.get("/events/{event_id}/tables", response_model=List[TableResponse])
 def get_tables(
     event_id: int,
@@ -20,6 +29,9 @@ def get_tables(
 ):
     verify_event_ownership(db, event_id, current_user)
     tables = db.query(Table).filter(Table.event_id == event_id).all()
+    for table in tables:
+        _recalculate_table_occupied_seats(db, table)
+    db.commit()
     return tables
 
 
@@ -78,17 +90,19 @@ def assign_guest(
     if guest.event_id != table.event_id:
         raise HTTPException(status_code=403, detail="Guest not in this event")
 
-    if table.occupied_seats >= table.total_seats:
+    required_seats = _guest_seats(guest)
+    available_seats = table.total_seats - table.occupied_seats
+    if available_seats < required_seats:
         raise HTTPException(status_code=400, detail="Table is full")
 
     # if guest already seated elsewhere, free that seat
     if guest.table_id and guest.table_id != table_id:
         old_table = db.query(Table).filter(Table.id == guest.table_id).first()
         if old_table and old_table.occupied_seats > 0:
-            old_table.occupied_seats -= 1
+            old_table.occupied_seats = max(0, old_table.occupied_seats - required_seats)
 
     guest.table_id = table_id
-    table.occupied_seats += 1
+    table.occupied_seats += required_seats
     db.commit()
     db.refresh(table)
     return table
@@ -114,7 +128,7 @@ def unassign_guest(
         raise HTTPException(status_code=403, detail="Guest not in this event")
 
     if guest.table_id == table_id and table.occupied_seats > 0:
-        table.occupied_seats -= 1
+        table.occupied_seats = max(0, table.occupied_seats - _guest_seats(guest))
         guest.table_id = None
         db.commit()
         db.refresh(table)

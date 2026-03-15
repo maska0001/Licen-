@@ -202,6 +202,7 @@ export default function App() {
   
   const rsvpGuestId = new URLSearchParams(window.location.search).get('guest');
   const landingParam = new URLSearchParams(window.location.search).get('landing');
+  const publicLandingPath = /^\/landing\/[^/]+$/.test(window.location.pathname);
 
   // Reload event-scoped data when activeEventId changes
   useEffect(() => {
@@ -220,7 +221,7 @@ export default function App() {
           supplierService.getSuppliers(parseInt(activeEventId)),
           budgetService.getBudgetItems(parseInt(activeEventId)),
           tableService.getTables(parseInt(activeEventId)),
-          checklistService.getChecklist(parseInt(activeEventId)),
+          checklistService.getChecklistItems(parseInt(activeEventId)),
         ]);
         setGuests(g || []);
         setSuppliers(s || []);
@@ -294,7 +295,7 @@ export default function App() {
   };
 
   // Public landing page (no authentication required)
-  if (landingParam) {
+  if (landingParam || publicLandingPath) {
     return (
       <AppContext.Provider value={value}>
         <PublicLanding />

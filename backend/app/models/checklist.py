@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database.session import Base
 
@@ -12,7 +13,13 @@ class ChecklistItem(Base):
     category = Column(String, nullable=True)
     completed = Column(Boolean, default=False)
     due_date = Column(Date, nullable=True)
+    kind = Column(String, default="manual", nullable=False)  # manual | auto
+    priority = Column(String, default="medium", nullable=False)  # low | medium | high
+    source_type = Column(String, nullable=True)
+    source_id = Column(Integer, nullable=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     event = relationship("Event", back_populates="checklist_items")

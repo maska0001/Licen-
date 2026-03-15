@@ -17,6 +17,8 @@ class EventPackageItem(Base):
     estimated_cost = Column(Float, default=0.0)
     supplier_rating_snapshot = Column(Float, default=0.0)
     supplier_is_custom_snapshot = Column(Boolean, default=False)
+    supplier_contact_snapshot = Column(String, nullable=True)
+    supplier_location_snapshot = Column(String, nullable=True)
     matrix_position = Column(String, nullable=True)  # low / middle / high
     pricing_model = Column(String, nullable=True)  # FIX_EVENT, PER_INVITAT, etc.
     base_price_per_unit = Column(Float, nullable=True)  # Original price before multiplication

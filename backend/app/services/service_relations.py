@@ -86,6 +86,20 @@ def ensure_service_relation_columns(db: Session) -> None:
                 "ADD COLUMN IF NOT EXISTS supplier_is_custom_snapshot BOOLEAN DEFAULT FALSE"
             )
         )
+    if "supplier_contact_snapshot" not in package_item_columns:
+        db.execute(
+            text(
+                "ALTER TABLE event_package_items "
+                "ADD COLUMN IF NOT EXISTS supplier_contact_snapshot VARCHAR"
+            )
+        )
+    if "supplier_location_snapshot" not in package_item_columns:
+        db.execute(
+            text(
+                "ALTER TABLE event_package_items "
+                "ADD COLUMN IF NOT EXISTS supplier_location_snapshot VARCHAR"
+            )
+        )
 
     db.commit()
 

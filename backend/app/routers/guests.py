@@ -4,12 +4,35 @@ from typing import List
 from app.database.session import get_db
 from app.models.user import User
 from app.models.guest import Guest
+from app.models.table import Table
 from app.schemas.guest import GuestCreate, GuestUpdate, GuestResponse
 from app.services.rsvp_service import generate_rsvp_token
 from app.core.security import get_current_user
 from app.utils.permissions import verify_event_ownership
 
 router = APIRouter(tags=["Guests"])
+
+
+def serialize_guest(guest: Guest) -> dict:
+    return {
+        "id": guest.id,
+        "event_id": guest.event_id,
+        "name": guest.name,
+        "phone": guest.phone,
+        "email": guest.email,
+        "status": guest.status,
+        "adults": guest.adults,
+        "children": guest.children,
+        "notes": guest.notes,
+        "table_id": guest.table_id,
+        "parent_guest_id": guest.parent_guest_id,
+        "is_children_only": guest.is_children_only,
+        "rsvp_token": guest.rsvp_token.token if guest.rsvp_token else None,
+    }
+
+
+def _guest_seats(guest: Guest) -> int:
+    return max(1, (guest.adults or 0) + (guest.children or 0))
 
 
 @router.get("/events/{event_id}/guests", response_model=List[GuestResponse])
@@ -20,7 +43,7 @@ def get_guests(
 ):
     verify_event_ownership(db, event_id, current_user)
     guests = db.query(Guest).filter(Guest.event_id == event_id).all()
-    return guests
+    return [serialize_guest(guest) for guest in guests]
 
 
 @router.post("/events/{event_id}/guests", response_model=GuestResponse, status_code=status.HTTP_201_CREATED)
@@ -41,7 +64,8 @@ def create_guest(
     db.refresh(new_guest)
     # generate RSVP token
     generate_rsvp_token(db, new_guest.id, event_id)
-    return new_guest
+    db.refresh(new_guest)
+    return serialize_guest(new_guest)
 
 
 @router.put("/guests/{guest_id}", response_model=GuestResponse)
@@ -74,12 +98,12 @@ def update_guest(
         from app.models.table import Table  # local import to avoid cycle
         table = db.query(Table).filter(Table.id == table_id_before).first()
         if table and table.occupied_seats > 0:
-            table.occupied_seats = max(0, table.occupied_seats - 1)
+            table.occupied_seats = max(0, table.occupied_seats - _guest_seats(guest))
         guest.table_id = None
 
     db.commit()
     db.refresh(guest)
-    return guest
+    return serialize_guest(guest)
 
 
 @router.delete("/guests/{guest_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -91,8 +115,15 @@ def delete_guest(
     guest = db.query(Guest).filter(Guest.id == guest_id).first()
     if not guest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest not found")
-    
+
     verify_event_ownership(db, guest.event_id, current_user)
+
+    if guest.table_id:
+        table = db.query(Table).filter(Table.id == guest.table_id).first()
+        if table and table.occupied_seats > 0:
+            released_seats = max(1, (guest.adults or 0) + (guest.children or 0))
+            table.occupied_seats = max(0, table.occupied_seats - released_seats)
+
     db.delete(guest)
     db.commit()
     return None

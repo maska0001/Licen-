@@ -56,7 +56,7 @@ export function TableArrangement() {
     }
   }, [openDropdown]);
 
-  // Auto-reunite family when both parent and children are in same location (both unallocated or same table)
+  // Auto-reunite family only when parent and children end up at the same table.
   useEffect(() => {
     const childrenGuests = guests.filter(g => g.is_children_only && g.parent_guest_id);
     
@@ -64,13 +64,8 @@ export function TableArrangement() {
       const parent = guests.find(g => g.id === childGuest.parent_guest_id);
       if (!parent) return;
 
-      // Both unallocated - reunite
-      if (!childGuest.table_id && !parent.table_id) {
-        setTimeout(() => reuniteFamily(childGuest.id), 50);
-        return;
-      }
       // Both at same table - reunite
-      else if (childGuest.table_id && childGuest.table_id === parent.table_id) {
+      if (childGuest.table_id && childGuest.table_id === parent.table_id) {
         setTimeout(() => reuniteFamily(childGuest.id), 50);
         return;
       }
@@ -92,8 +87,11 @@ export function TableArrangement() {
       // Create a new children-only guest entry
       const childrenGuest = await guestService.createGuest(parseInt(activeEventId), {
         name: guest.name,
+        phone: guest.phone || undefined,
+        status: guest.status,
         adults: 0,
         children: guest.children,
+        notes: guest.notes || undefined,
         parent_guest_id: guestId,
         is_children_only: true,
       });
@@ -135,26 +133,22 @@ export function TableArrangement() {
     if (!parentGuest) return;
 
     try {
-      // Update parent to include children count
-      const updatedParent = await guestService.updateGuest(childrenGuest.parent_guest_id, {
-        children: (parentGuest.children || 0) + (childrenGuest.children || 0)
-      });
+      const parentTableId = parentGuest.table_id ?? null;
+      const childrenTableId = childrenGuest.table_id ?? null;
+      const childrenSeats = childrenGuest.children || 0;
+      const sharedTableId =
+        parentTableId && parentTableId === childrenTableId ? parentTableId : null;
 
-      // If they're at the same table, no need to update table occupancy
-      // If children are at a table but parent is not, remove children from table
-      if (childrenGuest.table_id && !parentGuest.table_id) {
-        const table = tables.find(t => t.id === childrenGuest.table_id);
-        if (table) {
-          const updatedTable = await tableService.updateTable(childrenGuest.table_id, {
-            occupied_seats: Math.max(0, table.occupied_seats - (childrenGuest.children || 0))
-          });
-          setTables(tables.map(t => t.id === childrenGuest.table_id ? updatedTable : t));
-        }
-      }
+      // Families stay where they reunite:
+      // - same table => remain on that table
+      // - both unallocated => remain unallocated
+      const updatedParent = await guestService.updateGuest(childrenGuest.parent_guest_id, {
+        children: (parentGuest.children || 0) + childrenSeats,
+        table_id: sharedTableId,
+      });
 
       // Delete the children-only guest
       await guestService.deleteGuest(childrenGuestId);
-      
       setGuests(guests.map(g => 
         g.id === childrenGuest.parent_guest_id ? updatedParent : g
       ).filter(g => g.id !== childrenGuestId));

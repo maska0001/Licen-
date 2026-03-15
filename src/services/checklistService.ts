@@ -8,6 +8,12 @@ export interface ChecklistItem {
   completed: boolean;
   due_date: string | null;
   supplier_id?: number | null;
+  kind: 'manual' | 'auto';
+  priority: 'low' | 'medium' | 'high';
+  source_type?: string | null;
+  source_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ChecklistItemCreate {
@@ -16,6 +22,10 @@ export interface ChecklistItemCreate {
   completed?: boolean;
   due_date?: string;
   supplier_id?: number;
+  kind?: 'manual' | 'auto';
+  priority?: 'low' | 'medium' | 'high';
+  source_type?: string;
+  source_id?: number;
 }
 
 export interface ChecklistItemUpdate {
@@ -24,6 +34,7 @@ export interface ChecklistItemUpdate {
   completed?: boolean;
   due_date?: string;
   supplier_id?: number;
+  priority?: 'low' | 'medium' | 'high';
 }
 
 export const checklistService = {

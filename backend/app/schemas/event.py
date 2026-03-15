@@ -22,7 +22,7 @@ class EventCreate(BaseModel):
 class EventUpdate(BaseModel):
     title: Optional[str] = None
     event_type: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[str] = None
     time: Optional[str] = None
     planning_stage: Optional[str] = None
     date_mode: Optional[str] = None

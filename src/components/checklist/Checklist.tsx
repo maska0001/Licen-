@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAppContext } from "../../App";
-import { Check, Pencil, Trash2, X, Plus } from "lucide-react";
+import { Check, Pencil, Trash2, X, Plus, ChevronDown } from "lucide-react";
 import { TASK_CATEGORIES, migrateCategoryToEmoji } from "../../data/categories";
 import {
   checklistService,
@@ -12,13 +12,13 @@ export function Checklist() {
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "completed" | "pending">("all");
-  const [sortBy, setSortBy] = useState<"category" | "date">("category");
+  const [sortBy, setSortBy] = useState<"category" | "date" | "priority" | "recent">("priority");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingTask, setEditingTask] = useState<number | null>(null);
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [formData, setFormData] = useState({
     task: "",
     category: "📋 General",
+    priority: "medium" as "low" | "medium" | "high",
     dueDate: "",
   });
 
@@ -72,10 +72,9 @@ export function Checklist() {
     if (
       !activeEventId ||
       !formData.task.trim() ||
-      !formData.category ||
-      !formData.dueDate
+      !formData.category
     ) {
-      alert("Te rog completează toate câmpurile!");
+      alert("Te rog completează câmpurile obligatorii!");
       return;
     }
 
@@ -85,13 +84,15 @@ export function Checklist() {
         {
           task: formData.task,
           category: formData.category,
-          due_date: formData.dueDate,
+          due_date: formData.dueDate || undefined,
           completed: false,
+          kind: "manual",
+          priority: formData.priority,
         }
       );
 
       setChecklist([...checklist, createdTask]);
-      setFormData({ task: "", category: "📋 General", dueDate: "" });
+      setFormData({ task: "", category: "📋 General", priority: "medium", dueDate: "" });
       setShowAddModal(false);
     } catch (error) {
       console.error("Failed to create task:", error);
@@ -103,7 +104,6 @@ export function Checklist() {
     if (
       !formData.task.trim() ||
       !formData.category.trim() ||
-      !formData.dueDate ||
       !editingTask
     )
       return;
@@ -112,7 +112,8 @@ export function Checklist() {
       await checklistService.updateChecklistItem(editingTask, {
         task: formData.task,
         category: formData.category,
-        due_date: formData.dueDate,
+        due_date: formData.dueDate || undefined,
+        priority: formData.priority,
       });
 
       setChecklist(
@@ -123,12 +124,13 @@ export function Checklist() {
                 task: formData.task,
                 category: formData.category,
                 due_date: formData.dueDate,
+                priority: formData.priority,
               }
             : item
         )
       );
 
-      setFormData({ task: "", category: "📋 General", dueDate: "" });
+      setFormData({ task: "", category: "📋 General", priority: "medium", dueDate: "" });
       setEditingTask(null);
     } catch (error) {
       console.error("Failed to update task:", error);
@@ -153,17 +155,24 @@ export function Checklist() {
     if (task) {
       setFormData({
         task: task.task,
-        category: task.category,
+        category: task.category || "📋 General",
+        priority: task.priority || "medium",
         dueDate: task.due_date || "",
       });
       setEditingTask(id);
     }
   };
 
+  const currentEditingTask =
+    editingTask !== null
+      ? checklist.find((item) => item.id === editingTask) ?? null
+      : null;
+  const isEditingAutoTask = currentEditingTask?.kind === "auto";
+
   const closeModal = () => {
     setShowAddModal(false);
     setEditingTask(null);
-    setFormData({ task: "", category: "📋 General", dueDate: "" });
+    setFormData({ task: "", category: "📋 General", priority: "medium", dueDate: "" });
   };
 
   // Stats
@@ -182,11 +191,18 @@ export function Checklist() {
   // Sort tasks
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (sortBy === "category") {
-      return a.category.localeCompare(b.category);
+      return (a.category || "").localeCompare(b.category || "");
     } else if (sortBy === "date") {
       if (!a.due_date) return 1;
       if (!b.due_date) return -1;
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+    } else if (sortBy === "priority") {
+      const order = { high: 0, medium: 1, low: 2 };
+      return (order[a.priority] ?? 1) - (order[b.priority] ?? 1);
+    } else if (sortBy === "recent") {
+      const left = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const right = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return right - left;
     }
     return 0;
   });
@@ -301,6 +317,28 @@ export function Checklist() {
     return { text: `${timeText} (${dateText})`, colorClass };
   };
 
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case "high":
+        return "Prioritate mare";
+      case "low":
+        return "Prioritate mică";
+      default:
+        return "Prioritate medie";
+    }
+  };
+
+  const getPriorityClass = (priority: string) => {
+    switch (priority) {
+      case "high":
+        return "bg-red-50 text-red-700";
+      case "low":
+        return "bg-slate-100 text-slate-600";
+      default:
+        return "bg-amber-50 text-amber-700";
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 pt-[50px]">
       {/* Header */}
@@ -405,6 +443,8 @@ export function Checklist() {
               >
                 <option value="category">Categorie</option>
                 <option value="date">Deadline</option>
+                <option value="priority">Prioritate</option>
+                <option value="recent">Ultimele modificări</option>
               </select>
             </div>
           </div>
@@ -472,6 +512,24 @@ export function Checklist() {
                           >
                             {task.task}
                           </p>
+
+                          <span
+                            className={`text-[10px] px-3 py-1 rounded-full uppercase font-semibold ${
+                              task.kind === "auto"
+                                ? "bg-[#f3f4f6] text-[#4a5565]"
+                                : "bg-[#fef2f2] text-[#960010]"
+                            }`}
+                          >
+                            {task.kind === "auto" ? "Automat" : "Manual"}
+                          </span>
+
+                          <span
+                            className={`text-[10px] px-3 py-1 rounded-full uppercase font-semibold ${getPriorityClass(
+                              task.priority
+                            )}`}
+                          >
+                            {getPriorityLabel(task.priority)}
+                          </span>
 
                           {/* Deadline Badge */}
                           {deadline && !task.completed && (
@@ -564,6 +622,25 @@ export function Checklist() {
                             <span className="text-[10px] px-3 py-1 rounded-full bg-[#f3f4f6] text-[#4a5565] w-fit uppercase font-semibold">
                               {task.category}
                             </span>
+
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`text-[10px] px-3 py-1 rounded-full uppercase font-semibold ${
+                                  task.kind === "auto"
+                                    ? "bg-[#f3f4f6] text-[#4a5565]"
+                                    : "bg-[#fef2f2] text-[#960010]"
+                                }`}
+                              >
+                                {task.kind === "auto" ? "Automat" : "Manual"}
+                              </span>
+                              <span
+                                className={`text-[10px] px-3 py-1 rounded-full uppercase font-semibold ${getPriorityClass(
+                                  task.priority
+                                )}`}
+                              >
+                                {getPriorityLabel(task.priority)}
+                              </span>
+                            </div>
 
                             {/* Task Text */}
                             <p
@@ -658,6 +735,16 @@ export function Checklist() {
             </div>
 
             <div className="space-y-5">
+              {isEditingAutoTask && (
+                <div className="rounded-[20px] bg-[#f9fafb] border border-[#e5e7eb] px-5 py-4">
+                  <p className="text-sm text-[#4a5565]">
+                    Această sarcină este generată automat dintr-un furnizor.
+                    Poți modifica doar prioritatea, deadline-ul și statusul de
+                    completare.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm text-gray-600 mb-2">
                   Categorie
@@ -668,10 +755,12 @@ export function Checklist() {
                     onChange={(e) =>
                       setFormData({ ...formData, category: e.target.value })
                     }
-                    className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
-                    onClick={() =>
-                      setShowCategoryDropdown(!showCategoryDropdown)
-                    }
+                    disabled={isEditingAutoTask}
+                    className={`w-full appearance-none px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none bg-white text-[#101828] ${
+                      isEditingAutoTask
+                        ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+                        : ""
+                    }`}
                   >
                     {TASK_CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>
@@ -679,22 +768,7 @@ export function Checklist() {
                       </option>
                     ))}
                   </select>
-                  {showCategoryDropdown && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-full shadow-lg z-10">
-                      {TASK_CATEGORIES.map((cat) => (
-                        <div
-                          key={cat}
-                          className="px-6 py-3 cursor-pointer hover:bg-gray-100"
-                          onClick={() => {
-                            setFormData({ ...formData, category: cat });
-                            setShowCategoryDropdown(false);
-                          }}
-                        >
-                          {cat}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
@@ -709,7 +783,12 @@ export function Checklist() {
                     setFormData({ ...formData, task: e.target.value })
                   }
                   placeholder="Descriere sarcină"
-                  className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
+                  disabled={isEditingAutoTask}
+                  className={`w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none ${
+                    isEditingAutoTask
+                      ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+                      : ""
+                  }`}
                 />
               </div>
 
@@ -726,14 +805,38 @@ export function Checklist() {
                   className="w-full px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-2">
+                  Prioritate
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.priority}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        priority: e.target.value as
+                          | "low"
+                          | "medium"
+                          | "high",
+                      })
+                    }
+                    className="w-full appearance-none px-6 py-3 border border-gray-200 rounded-full focus:border-[#960010] focus:outline-none bg-white text-[#101828]"
+                  >
+                    <option value="high">Prioritate mare</option>
+                    <option value="medium">Prioritate medie</option>
+                    <option value="low">Prioritate mică</option>
+                  </select>
+                  <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3 mt-8">
               <button
                 onClick={editingTask ? updateTask : addTask}
-                disabled={
-                  !formData.task || !formData.category || !formData.dueDate
-                }
+                disabled={!formData.task || !formData.category}
                 className="flex-1 bg-[#960010] hover:bg-[#7a000d] text-white py-3 rounded-full transition-all disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 {editingTask ? "Salvează" : "Adaugă"}

@@ -119,7 +119,7 @@ export function RSVPForm() {
           <h1 className="text-3xl text-purple-600 mb-2">{event?.event_type || 'Eveniment Special'}</h1>
           {event && (
             <p className="text-gray-600">
-              {new Date(event.date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })} • {event.city}
+              {new Date(event.date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })} • {event.venue_name || event.venue_city || event.city}
             </p>
           )}
         </div>

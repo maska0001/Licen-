@@ -7,6 +7,7 @@ from app.models.checklist import ChecklistItem
 from app.schemas.checklist import ChecklistItemCreate, ChecklistItemUpdate, ChecklistItemResponse
 from app.core.security import get_current_user
 from app.utils.permissions import verify_event_ownership
+from datetime import datetime
 
 router = APIRouter(tags=["Checklist"])
 
@@ -50,8 +51,17 @@ def update_checklist_item(
     
     verify_event_ownership(db, checklist_item.event_id, current_user)
     
-    for key, value in checklist_data.model_dump(exclude_unset=True).items():
+    updates = checklist_data.model_dump(exclude_unset=True)
+    if checklist_item.kind == "auto":
+        updates = {
+            key: value
+            for key, value in updates.items()
+            if key in {"completed", "due_date", "priority"}
+        }
+
+    for key, value in updates.items():
         setattr(checklist_item, key, value)
+    checklist_item.updated_at = datetime.utcnow()
     
     db.commit()
     db.refresh(checklist_item)

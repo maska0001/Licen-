@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '../../App';
-import { Plus, Mail, Phone, Copy, Check, X, Users, UserCheck, UserX, Clock, Edit2, ExternalLink } from 'lucide-react';
+import { Plus, Mail, Phone, Copy, Check, X, Users, UserCheck, UserX, Clock, Edit2, ExternalLink, ChevronDown } from 'lucide-react';
 import { guestService, Guest, RsvpStatus } from '../../services/guestService';
 
 export function GuestList() {
-  const { activeEventId } = useAppContext();
+  const { activeEventId, setGuests: setAppGuests } = useAppContext();
   const [guests, setGuests] = useState<Guest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -15,34 +15,72 @@ export function GuestList() {
   const [newGuest, setNewGuest] = useState({
     name: '',
     phone: '',
+    status: 'pending' as RsvpStatus,
     adults: 1,
     children: 0,
     notes: '',
   });
 
+  const loadGuests = useCallback(async (showLoader = false) => {
+    if (!activeEventId) {
+      setGuests([]);
+      setAppGuests([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (showLoader) {
+        setLoading(true);
+      }
+      const guestsData = await guestService.getGuests(parseInt(activeEventId));
+      setGuests(guestsData);
+      setAppGuests(guestsData);
+    } catch (error) {
+      console.error('Failed to load guests:', error);
+      setGuests([]);
+      setAppGuests([]);
+    } finally {
+      if (showLoader) {
+        setLoading(false);
+      }
+    }
+  }, [activeEventId, setAppGuests]);
+
   // Load guests from backend
   useEffect(() => {
-    const loadGuests = async () => {
-      if (!activeEventId) {
-        setGuests([]);
-        setLoading(false);
-        return;
-      }
+    void loadGuests(true);
+  }, [loadGuests]);
 
-      try {
-        setLoading(true);
-        const guestsData = await guestService.getGuests(parseInt(activeEventId));
-        setGuests(guestsData);
-      } catch (error) {
-        console.error('Failed to load guests:', error);
-        setGuests([]);
-      } finally {
-        setLoading(false);
+  // Keep guest responses fresh without manual page refresh
+  useEffect(() => {
+    if (!activeEventId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadGuests(false);
+    }, 5000);
+
+    const handleFocus = () => {
+      void loadGuests(false);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadGuests(false);
       }
     };
 
-    loadGuests();
-  }, [activeEventId]);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeEventId, loadGuests]);
 
   const addGuest = async () => {
     if (!activeEventId || !newGuest.name) return;
@@ -51,13 +89,14 @@ export function GuestList() {
       const createdGuest = await guestService.createGuest(parseInt(activeEventId), {
         name: newGuest.name,
         phone: newGuest.phone || undefined,
+        status: newGuest.status,
         adults: newGuest.adults,
         children: newGuest.children,
         notes: newGuest.notes || undefined,
       });
       setGuests([...guests, createdGuest]);
       setShowAddModal(false);
-      setNewGuest({ name: '', phone: '', adults: 1, children: 0, notes: '' });
+      setNewGuest({ name: '', phone: '', status: 'pending', adults: 1, children: 0, notes: '' });
     } catch (error) {
       console.error('Failed to add guest:', error);
       alert('Eroare la adăugarea invitatului');
@@ -107,15 +146,31 @@ export function GuestList() {
     }
   };
 
-  const copyRSVPLink = (guestId: number) => {
-    const link = `${window.location.origin}${window.location.pathname}?landing=${guestId}`;
+  const buildRsvpLink = (guest: Guest) => {
+    if (!guest.rsvp_token) {
+      return null;
+    }
+    return `${window.location.origin}/?landing=${guest.rsvp_token}`;
+  };
+
+  const copyRSVPLink = (guest: Guest) => {
+    const link = buildRsvpLink(guest);
+    if (!link) {
+      alert('Linkul RSVP nu este disponibil încă pentru acest invitat.');
+      return;
+    }
     navigator.clipboard.writeText(link);
-    setCopiedId(guestId);
+    setCopiedId(guest.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const openRSVPLink = (guestId: number) => {
-    window.open(`${window.location.origin}${window.location.pathname}?landing=${guestId}`, '_blank');
+  const openRSVPLink = (guest: Guest) => {
+    const link = buildRsvpLink(guest);
+    if (!link) {
+      alert('Linkul RSVP nu este disponibil încă pentru acest invitat.');
+      return;
+    }
+    window.open(link, '_blank');
   };
 
   const getStatusColor = (status: string) => {
@@ -136,13 +191,20 @@ export function GuestList() {
     }
   };
 
-  // Stats
-  const confirmedGuests = guests.filter(g => g.status === 'confirmed').length;
-  const pendingGuests = guests.filter(g => g.status === 'pending').length;
-  const declinedGuests = guests.filter(g => g.status === 'declined').length;
-  const totalAttendees = guests
+  const getGuestPeopleCount = (guest: Guest) =>
+    Math.max(0, (guest.adults || 0) + (guest.children || 0));
+
+  // Stats count real invited people, not guest rows.
+  const totalInvitedPeople = guests.reduce((sum, guest) => sum + getGuestPeopleCount(guest), 0);
+  const confirmedGuests = guests
     .filter(g => g.status === 'confirmed')
-    .reduce((sum, g) => sum + g.adults + g.children, 0);
+    .reduce((sum, guest) => sum + getGuestPeopleCount(guest), 0);
+  const pendingGuests = guests
+    .filter(g => g.status === 'pending')
+    .reduce((sum, guest) => sum + getGuestPeopleCount(guest), 0);
+  const declinedGuests = guests
+    .filter(g => g.status === 'declined')
+    .reduce((sum, guest) => sum + getGuestPeopleCount(guest), 0);
 
   // Filter guests
   const filteredGuests = guests.filter(g => {
@@ -174,7 +236,7 @@ export function GuestList() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-[16px] h-[128px]">
             <div className="bg-white shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] border border-[#e5e7eb] pt-[25px] px-[25px] pb-px flex flex-col gap-[8px]">
               <h3 className="font-normal text-[14px] leading-[20px] text-[#6a7282] tracking-[-0.3008px]">Total invitați</h3>
-              <p className="font-semibold text-[30px] leading-[38px] text-[#101828] tracking-[-0.2051px]">{guests.length}</p>
+              <p className="font-semibold text-[30px] leading-[38px] text-[#101828] tracking-[-0.2051px]">{totalInvitedPeople}</p>
             </div>
 
             <div className="bg-white shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] border border-[#e5e7eb] pt-[25px] px-[25px] pb-px flex flex-col gap-[8px]">
@@ -213,7 +275,7 @@ export function GuestList() {
                   ? 'bg-[rgba(255,255,255,0.2)] text-white'
                   : 'bg-[#f3f4f6] text-[#4a5565]'
               }`}>
-                {guests.length}
+                {totalInvitedPeople}
               </span>
             </button>
             
@@ -335,7 +397,7 @@ export function GuestList() {
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => copyRSVPLink(guest.id)}
+                          onClick={() => copyRSVPLink(guest)}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] bg-[#960010]/5 text-[#960010] rounded-lg hover:bg-[#960010]/10 transition-colors border border-[#960010]/20"
                           title="Copiază linkul personal"
                         >
@@ -352,7 +414,7 @@ export function GuestList() {
                           )}
                         </button>
                         <button
-                          onClick={() => openRSVPLink(guest.id)}
+                          onClick={() => openRSVPLink(guest)}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] bg-[#101828]/5 text-[#101828] rounded-lg hover:bg-[#101828]/10 transition-colors border border-[#101828]/20"
                           title="Deschide linkul"
                         >
@@ -445,16 +507,37 @@ export function GuestList() {
                 />
               </div>
 
-              <div>
-                <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Telefon</label>
-                <input
-                  type="tel"
+                  <div>
+                    <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Telefon</label>
+                    <input
+                      type="tel"
                   value={newGuest.phone}
                   onChange={(e) => setNewGuest({ ...newGuest, phone: e.target.value })}
                   placeholder="0721234567"
-                  className="w-full px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none"
-                />
-              </div>
+                      className="w-full px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Status</label>
+                    <div className="relative">
+                      <select
+                        value={newGuest.status}
+                        onChange={(e) =>
+                          setNewGuest({
+                            ...newGuest,
+                            status: e.target.value as RsvpStatus,
+                          })
+                        }
+                        className="w-full appearance-none px-6 py-3 border border-[#e5e7eb] rounded-full focus:border-[#960010] focus:outline-none bg-white text-[#101828]"
+                      >
+                        <option value="pending">În așteptare</option>
+                        <option value="confirmed">Confirmat</option>
+                        <option value="declined">Refuzat</option>
+                      </select>
+                      <ChevronDown className="w-5 h-5 text-[#6a7282] absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
 
               <div>
                 <label className="block text-[14px] text-[#6a7282] tracking-[-0.1504px] mb-2">Câți adulți veți fi *</label>

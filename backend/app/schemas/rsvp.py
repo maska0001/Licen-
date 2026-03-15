@@ -4,6 +4,7 @@ from typing import Optional
 
 class RsvpSubmit(BaseModel):
     status: str  # pending | confirmed | declined
+    phone: Optional[str] = None
     adults: Optional[int] = None
     children: Optional[int] = None
     notes: Optional[str] = None
